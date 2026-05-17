@@ -24,11 +24,12 @@ if TYPE_CHECKING:
 
 
 class ScrapingResult(Base):
-    """The output of the scraping phase for a single ScrapingRequest."""
+    """A single page scraped as part of a ScrapingRequest. One request can produce many results."""
 
     __tablename__ = "scraping_results"
     __table_args__ = (
         Index("ix_scraping_results_scraping_request_id", "scraping_request_id"),
+        Index("ix_scraping_results_url", "url"),
         Index(
             "ix_scraping_results_metadata_gin",
             "metadata",
@@ -42,9 +43,9 @@ class ScrapingResult(Base):
         Uuid(as_uuid=True),
         ForeignKey("scraping_requests.id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,
     )
 
+    url: Mapped[str] = mapped_column(Text, nullable=False)
     final_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -70,4 +71,4 @@ class ScrapingResult(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     # Relationships
-    scraping_request: Mapped[ScrapingRequest] = relationship(back_populates="scraping_result")
+    scraping_request: Mapped[ScrapingRequest] = relationship(back_populates="scraping_results")

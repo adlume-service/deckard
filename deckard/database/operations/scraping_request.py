@@ -49,7 +49,7 @@ async def get_with_details(session: AsyncSession, request_id: uuid.UUID) -> Scra
         select(ScrapingRequest)
         .where(ScrapingRequest.id == request_id)
         .options(
-            selectinload(ScrapingRequest.scraping_result),
+            selectinload(ScrapingRequest.scraping_results),
             selectinload(ScrapingRequest.llm_processing_jobs).selectinload(LLMProcessingJob.llm_output),
         )
     )

@@ -104,9 +104,8 @@ class ScrapingRequest(Base):
     # Relationships
     client: Mapped[Client] = relationship(back_populates="scraping_requests")
     website: Mapped[Website] = relationship(back_populates="scraping_requests")
-    scraping_result: Mapped[ScrapingResult | None] = relationship(
+    scraping_results: Mapped[list[ScrapingResult]] = relationship(
         back_populates="scraping_request",
-        uselist=False,
         passive_deletes=True,
     )
     llm_processing_jobs: Mapped[list[LLMProcessingJob]] = relationship(

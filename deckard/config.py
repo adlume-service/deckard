@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/deckard"
     database_echo: bool = False
 
+    scrape_max_depth: int = 2
+    scrape_max_pages: int = 50
+    scrape_request_timeout_seconds: int = 30
+
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",

@@ -60,15 +60,24 @@ class ScrapingRequestCreated(BaseModel):
 
 
 class ScrapingResultRead(BaseModel):
-    """Output of the scraping phase. Present once status reaches 'scraped'."""
+    """A single page scraped as part of a ScrapingRequest. One request can produce many of these."""
 
     model_config = ConfigDict(from_attributes=True)
 
+    id: uuid.UUID
+    url: str = Field(
+        ...,
+        description=(
+            "URL of this specific page. For the seed page this matches the "
+            "request's `requested_url`; for pages discovered via deep crawl it "
+            "is the discovered link."
+        ),
+    )
     final_url: str | None = Field(
         default=None,
         description=(
             "URL the scraper actually landed on after following redirects. May "
-            "differ from `requested_url`. Null if the fetch never completed."
+            "differ from `url`. Null if the fetch never completed."
         ),
     )
     success: bool = Field(
@@ -190,9 +199,9 @@ class ScrapingRequestRead(BaseModel):
             "pending → scraping → scraped → processing → completed. "
             "'pending' = submitted, not yet picked up. "
             "'scraping' = scraper is fetching the page. "
-            "'scraped' = page captured, `scraping_result` is populated, awaiting LLM. "
+            "'scraped' = page captured, `scraping_results` is populated, awaiting LLM. "
             "'processing' = at least one LLM job is in flight. "
-            "'completed' = all work finished; `scraping_result` and "
+            "'completed' = all work finished; `scraping_results` and "
             "`llm_processing_jobs` are populated. "
             "'failed' = terminal failure at some stage (see `error_code`/`error_message`). "
             "'cancelled' = manually cancelled."
@@ -200,7 +209,7 @@ class ScrapingRequestRead(BaseModel):
     )
     requested_url: str = Field(
         ...,
-        description="URL submitted by the client. See `scraping_result.final_url` for the post-redirect URL.",
+        description="Seed URL submitted by the client. See each `scraping_results[].final_url` for post-redirect URLs.",
     )
     idempotency_key: str | None = Field(
         default=None,
@@ -228,9 +237,14 @@ class ScrapingRequestRead(BaseModel):
         description="Human-readable error description. Populated only when status is 'failed'.",
     )
 
-    scraping_result: ScrapingResultRead | None = Field(
-        default=None,
-        description="Scraping output. Null until status reaches 'scraped'.",
+    scraping_results: list[ScrapingResultRead] = Field(
+        default_factory=list,
+        description=(
+            "Pages scraped for this request. Empty until status reaches "
+            "'scraping'; populated progressively as the crawler captures each "
+            "page. A single request may produce many results when the backend "
+            "follows nested links."
+        ),
     )
     llm_processing_jobs: list[LLMProcessingJobRead] = Field(
         default_factory=list,

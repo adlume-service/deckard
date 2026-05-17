@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from deckard.database.operations import scraping_request as scraping_request_ops
@@ -11,6 +11,7 @@ from deckard.schemas.scraping_request import (
     ScrapingRequestCreated,
     ScrapingRequestRead,
 )
+from deckard.services.scraping import process_scraping_request
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -33,6 +34,7 @@ router = APIRouter(prefix="/scraping-requests", tags=["Scraping Requests"])
 async def create_scraping_request(
     payload: ScrapingRequestCreate,
     session: SessionDep,
+    background_tasks: BackgroundTasks,
 ) -> ScrapingRequestCreated:
     request = await scraping_request_ops.create(
         session,
@@ -42,6 +44,10 @@ async def create_scraping_request(
         metadata=payload.metadata,
     )
     await session.commit()
+
+    if request.status == "pending":
+        background_tasks.add_task(process_scraping_request, request.id)
+
     return ScrapingRequestCreated.model_validate(request)
 
 
