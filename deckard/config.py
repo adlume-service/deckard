@@ -19,6 +19,14 @@ LogLevelType = Literal[
 ]
 
 
+ReasoningEffort = Literal[
+    "minimal",
+    "low",
+    "medium",
+    "high",
+]
+
+
 class Settings(BaseSettings):
     app_name: str = "Deckard"
 
@@ -33,6 +41,12 @@ class Settings(BaseSettings):
     scrape_max_depth: int = 2
     scrape_max_pages: int = 50
     scrape_request_timeout_seconds: int = 30
+
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-5.4-mini"
+    openai_reasoning_effort: ReasoningEffort = "medium"
+    openai_request_timeout_seconds: int = 120
+    extraction_prompt_version: str = "v1"
 
     model_config = SettingsConfigDict(
         env_file=".env",

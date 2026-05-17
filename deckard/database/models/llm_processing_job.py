@@ -62,6 +62,7 @@ class LLMProcessingJob(Base):
 
     provider: Mapped[str | None] = mapped_column(String, nullable=True)
     model: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider_response_id: Mapped[str | None] = mapped_column(String, nullable=True)
     prompt_version: Mapped[str | None] = mapped_column(String, nullable=True)
 
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
