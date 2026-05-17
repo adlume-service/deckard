@@ -1,12 +1,36 @@
 [project]
 name = "deckard"
 version = "0.1.0"
-description = "Add your description here"
+description = "FastAPI backend for website scraping and LLM extraction"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "alembic>=1.13.2",
+    "asyncpg>=0.30.0",
     "fastapi>=0.136.1",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.1",
+    "sqlalchemy[asyncio]>=2.0.36",
     "uvicorn>=0.46.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.0.0",
+]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+]
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/versions/*" = ["E501"]

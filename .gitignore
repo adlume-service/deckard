@@ -11,3 +11,6 @@ wheels/
 
 # Environmental variables
 .env
+
+# Tool caches
+.ruff_cache/

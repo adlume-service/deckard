@@ -3,10 +3,9 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 EnvironmentType = Literal[
-    "local", 
-    "staging", 
+    "local",
+    "staging",
     "production",
 ]
 
@@ -22,11 +21,14 @@ LogLevelType = Literal[
 
 class Settings(BaseSettings):
     app_name: str = "Deckard"
-    
+
     environment: EnvironmentType = "local"
-    
+
     log_level: LogLevelType = "INFO"
     debug: bool = False
+
+    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/deckard"
+    database_echo: bool = False
 
     model_config = SettingsConfigDict(
         env_file=".env",

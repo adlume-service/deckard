@@ -1,9 +1,12 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel
 
 from deckard.config import Settings, get_settings
+
+SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 router = APIRouter(tags=["Status"])
 
@@ -15,7 +18,6 @@ class HealthCheckResponse(BaseModel):
     timestamp: datetime
 
 
-
 @router.get(
     "/status",
     response_model=HealthCheckResponse,
@@ -23,10 +25,10 @@ class HealthCheckResponse(BaseModel):
     summary="Application health status",
     description="Returns the current operational status of the application.",
 )
-async def status(settings: Settings = Depends(get_settings)) -> HealthCheckResponse:
+async def status(settings: SettingsDep) -> HealthCheckResponse:
     return HealthCheckResponse(
         status="healthy",
         service=settings.app_name,
         environment=settings.environment,
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
