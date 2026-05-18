@@ -41,9 +41,14 @@ WORKDIR /app
 
 COPY --from=builder /app /app
 
-# tini for PID 1 (reaps Chromium subprocesses); Chromium system libs via playwright --with-deps.
+# tini for PID 1 (reaps Chromium subprocesses); libxml2/libxslt are lxml's runtime
+# shared libs (the -dev variants used in the builder are headers only); Chromium
+# system libs come via playwright --with-deps.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends tini \
+    && apt-get install -y --no-install-recommends \
+        tini \
+        libxml2 \
+        libxslt1.1 \
     && playwright install --with-deps chromium \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
