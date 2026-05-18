@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -20,6 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from deckard.database.base import Base
 
 if TYPE_CHECKING:
+    from deckard.database.models.llm_call import LLMCall
     from deckard.database.models.llm_output import LLMOutput
     from deckard.database.models.scraping_request import ScrapingRequest
 
@@ -60,9 +62,6 @@ class LLMProcessingJob(Base):
     job_type: Mapped[str] = mapped_column(String, nullable=False, server_default=text("'default_extraction'"))
     status: Mapped[str] = mapped_column(String, nullable=False, server_default=text("'pending'"))
 
-    provider: Mapped[str | None] = mapped_column(String, nullable=True)
-    model: Mapped[str | None] = mapped_column(String, nullable=True)
-    provider_response_id: Mapped[str | None] = mapped_column(String, nullable=True)
     prompt_version: Mapped[str | None] = mapped_column(String, nullable=True)
 
     attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
@@ -79,8 +78,7 @@ class LLMProcessingJob(Base):
         onupdate=func.now(),
     )
 
-    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ranker_used: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     error_code: Mapped[str | None] = mapped_column(String, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -101,5 +99,9 @@ class LLMProcessingJob(Base):
     llm_output: Mapped[LLMOutput | None] = relationship(
         back_populates="llm_processing_job",
         uselist=False,
+        passive_deletes=True,
+    )
+    calls: Mapped[list[LLMCall]] = relationship(
+        back_populates="llm_processing_job",
         passive_deletes=True,
     )

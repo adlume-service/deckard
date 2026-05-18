@@ -12,15 +12,11 @@ async def create_for_request(
     *,
     scraping_request_id: uuid.UUID,
     job_type: str = "default_extraction",
-    provider: str | None = None,
-    model: str | None = None,
     prompt_version: str | None = None,
 ) -> LLMProcessingJob:
     job = LLMProcessingJob(
         scraping_request_id=scraping_request_id,
         job_type=job_type,
-        provider=provider,
-        model=model,
         prompt_version=prompt_version,
     )
     session.add(job)

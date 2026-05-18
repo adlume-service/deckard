@@ -15,6 +15,7 @@ from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from deckard.config import get_settings
+from deckard.constants import TOKEN_ENCODING
 from deckard.database.models import ScrapingRequest, ScrapingResult
 from deckard.database.session import get_sessionmaker
 
@@ -99,12 +100,14 @@ async def _crawl(*, seed_url: str) -> list[ScrapingResult]:
 
 def _to_scraping_result(result: CrawlResult) -> ScrapingResult:
     markdown = str(result.markdown) if result.markdown is not None else None
+    markdown = markdown or None
     return ScrapingResult(
         url=result.url,
         final_url=result.redirected_url or result.url,
-        markdown=markdown or None,
+        markdown=markdown,
         cleaned_html=result.cleaned_html,
         raw_html=result.html or None,
         success=result.success,
         status_code=result.status_code,
+        tokens=len(TOKEN_ENCODING.encode(markdown)) if markdown else None,
     )

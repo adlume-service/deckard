@@ -92,10 +92,12 @@ class ScrapingResultRead(BaseModel):
         default=None,
         description="HTTP status code returned by the target site.",
     )
-    markdown: str | None = Field(
+    tokens: int | None = Field(
         default=None,
         description=(
-            "Cleaned plain-text/markdown rendering of the page. Suitable for display or downstream LLM input."
+            "Token count of `markdown` per the canonical `o200k_base` encoding, "
+            "computed once at scrape time. Null if the markdown is null or the row "
+            "predates this field."
         ),
     )
     created_at: datetime
@@ -154,14 +156,6 @@ class LLMProcessingJobRead(BaseModel):
             "'cancelled' = manually cancelled."
         ),
     )
-    provider: str | None = Field(
-        default=None,
-        description="LLM provider that ran the job (e.g. 'anthropic', 'openai').",
-    )
-    model: str | None = Field(
-        default=None,
-        description="Provider-specific model identifier.",
-    )
     started_at: datetime | None = Field(
         default=None,
         description="Set when the LLM call begins; null while status is 'pending'.",
@@ -177,6 +171,14 @@ class LLMProcessingJobRead(BaseModel):
     error_message: str | None = Field(
         default=None,
         description="Human-readable error description; populated only when status is 'failed'.",
+    )
+    ranker_used: bool | None = Field(
+        default=None,
+        description=(
+            "Null when no shrinkage was needed. True if the small-model URL ranker "
+            "ordered the pages; false if the ranker call failed and we fell back to a "
+            "deterministic ordering."
+        ),
     )
     llm_output: LLMOutputRead | None = Field(
         default=None,

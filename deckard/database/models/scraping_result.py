@@ -60,6 +60,8 @@ class ScrapingResult(Base):
     success: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("true"))
     status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     result_metadata: Mapped[dict[str, Any]] = mapped_column(
         "metadata",
         JSONB,

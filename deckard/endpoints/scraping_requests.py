@@ -64,7 +64,7 @@ async def create_scraping_request(
         "When LLM processing has produced any outputs, they are included "
         "under `llm_processing_jobs`."
     ),
-    responses={404: {"description": "Scraping request not found."}},
+    responses={status.HTTP_404_NOT_FOUND: {"description": "Scraping request not found."}},
 )
 async def get_scraping_request(
     request_id: uuid.UUID,
