@@ -4,6 +4,7 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from deckard.auth import CurrentApiUser
 from deckard.database.operations import scraping_request as scraping_request_ops
 from deckard.database.session import get_session
 from deckard.schemas.scraping_request import (
@@ -25,20 +26,23 @@ router = APIRouter(prefix="/scraping-requests", tags=["Scraping Requests"])
     status_code=status.HTTP_201_CREATED,
     summary="Submit a new scraping request",
     description=(
-        "Creates a scraping request for the given client and URL. The client "
-        "(identified by `client_identifier`) and the website (identified by "
-        "`url`) are created on first use. Supplying an `idempotency_key` makes "
-        "the call safe to retry — subsequent requests with the same key for "
-        "the same client return the original request unchanged."
+        "Creates a scraping request submitted by the authenticated ApiUser on "
+        "behalf of the Client identified by `client_identifier`. The Client "
+        "and Website are created on first use. Supplying an `idempotency_key` "
+        "makes the call safe to retry — subsequent requests with the same key "
+        "from the same ApiUser return the original request unchanged."
     ),
+    responses={status.HTTP_401_UNAUTHORIZED: {"description": "Missing or invalid API key."}},
 )
 async def create_scraping_request(
     payload: ScrapingRequestCreate,
     session: SessionDep,
     background_tasks: BackgroundTasks,
+    api_user: CurrentApiUser,
 ) -> ScrapingRequestCreated:
     request = await scraping_request_ops.create(
         session,
+        api_user=api_user,
         client_identifier=payload.client_identifier,
         url=str(payload.url),
         idempotency_key=payload.idempotency_key,
@@ -64,14 +68,18 @@ async def create_scraping_request(
         "When LLM processing has produced any outputs, they are included "
         "under `llm_processing_jobs`."
     ),
-    responses={status.HTTP_404_NOT_FOUND: {"description": "Scraping request not found."}},
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Missing or invalid API key."},
+        status.HTTP_404_NOT_FOUND: {"description": "Scraping request not found."},
+    },
 )
 async def get_scraping_request(
     request_id: uuid.UUID,
     session: SessionDep,
+    api_user: CurrentApiUser,
 ) -> ScrapingRequestRead:
     request = await scraping_request_ops.get_with_details(session, request_id)
-    if request is None:
+    if request is None or request.api_user_id != api_user.id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Scraping request {request_id} not found.",

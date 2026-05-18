@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from deckard.database.models import LLMProcessingJob, ScrapingRequest
+from deckard.database.models import ApiUser, LLMProcessingJob, ScrapingRequest
 from deckard.database.operations import client as client_ops
 from deckard.database.operations import website as website_ops
 
@@ -13,6 +13,7 @@ from deckard.database.operations import website as website_ops
 async def create(
     session: AsyncSession,
     *,
+    api_user: ApiUser,
     client_identifier: str,
     url: str,
     idempotency_key: str | None = None,
@@ -24,7 +25,7 @@ async def create(
     if idempotency_key is not None:
         existing = await session.execute(
             select(ScrapingRequest).where(
-                ScrapingRequest.client_id == client.id,
+                ScrapingRequest.api_user_id == api_user.id,
                 ScrapingRequest.idempotency_key == idempotency_key,
             )
         )
@@ -34,6 +35,7 @@ async def create(
 
     request = ScrapingRequest(
         client_id=client.id,
+        api_user_id=api_user.id,
         website_id=website.id,
         requested_url=url,
         idempotency_key=idempotency_key,

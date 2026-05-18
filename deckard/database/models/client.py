@@ -13,7 +13,12 @@ if TYPE_CHECKING:
 
 
 class Client(Base):
-    """A client account that owns websites and submits scraping requests."""
+    """A tenant whose websites are scraped and whose UUID is tracked for billing.
+
+    Distinct from `ApiUser`: an ApiUser is the calling server. One ApiUser
+    submits scraping requests for many Clients; the Client is referenced
+    per-request by `client_identifier`.
+    """
 
     __tablename__ = "clients"
 

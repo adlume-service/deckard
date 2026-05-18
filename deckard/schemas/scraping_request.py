@@ -9,29 +9,36 @@ from deckard.database.models.scraping_request import ScrapingRequestStatus
 
 
 class ScrapingRequestCreate(BaseModel):
-    """Payload for creating a new scraping request."""
+    """Payload for creating a new scraping request.
+
+    The submitting ApiUser is identified by the bearer token; the Client this
+    request belongs to (for billing and grouping) is supplied per-request by
+    `client_identifier`.
+    """
 
     client_identifier: str = Field(
         ...,
         description=(
-            "Stable identifier of the client submitting the request. "
-            "If no client with this identifier exists, one is created on first use."
+            "Stable identifier of the Client this request belongs to. Used for "
+            "billing and grouping. If no Client with this identifier exists, one "
+            "is created on first use. Identifiers are global — two ApiUsers "
+            "using the same identifier refer to the same Client."
         ),
     )
     url: HttpUrl = Field(
         ...,
         description=(
-            "URL of the page to scrape. If this client has not scraped this URL "
-            "before, a Website entry is created for them on first use."
+            "URL of the page to scrape. If this Client has not scraped this URL "
+            "before, a Website entry is created on first use."
         ),
     )
     idempotency_key: str | None = Field(
         default=None,
         description=(
-            "Optional client-supplied key for safe retries. Resubmitting with "
-            "the same (client_identifier, idempotency_key) returns the original "
-            "request unchanged instead of creating a duplicate. Recommended: "
-            "generate a fresh UUID per submit-button-press on the frontend."
+            "Optional caller-supplied key for safe retries. Resubmitting with "
+            "the same idempotency_key from the same authenticated ApiUser "
+            "returns the original request unchanged instead of creating a "
+            "duplicate. Recommended: generate a fresh UUID per submit-button-press."
         ),
     )
     metadata: dict[str, Any] = Field(

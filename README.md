@@ -72,3 +72,73 @@ uv run alembic current
 ```bash
 uv run uvicorn deckard.app:app --reload
 ```
+
+## Authentication
+
+All `/scraping-requests` endpoints require an API key sent as a bearer token:
+
+```
+Authorization: Bearer deckard_live_<random>
+```
+
+`/status` is intentionally public for health checks.
+
+### Identity model
+
+- **ApiUser** — the calling server. Holds the API key. Standalone — no link
+  to a Client.
+- **Client** — a tenant whose data is being scraped. Tracked for billing.
+  Identified by a stable string `identifier` that the caller supplies
+  per-request. Created on first sight.
+
+One ApiUser submits requests for many Clients. Clients are referenced
+per-request via `client_identifier` in the POST body — they are NOT bound to
+the API key. Ownership of a `ScrapingRequest` is scoped to the *ApiUser* that
+submitted it: two ApiUsers using the same `client_identifier` can each see
+their own requests but not each other's.
+
+### Provisioning an ApiUser
+
+Administrative scripts live in the top-level `cli/` package — one script per
+command:
+
+```bash
+uv run python -m cli.create_api_user --name "acme-prod-integration"
+```
+
+The command prints the plaintext key once — only its SHA-256 hash is stored.
+Capture the key at creation time; there is no way to recover it later.
+
+### Calling the API
+
+```bash
+curl -X POST http://localhost:8000/scraping-requests \
+  -H "Authorization: Bearer deckard_live_<your-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"client_identifier": "acme-12345", "url": "https://example.com"}'
+```
+
+### Rotating a key
+
+Run `create_api_user` again to mint a fresh ApiUser + key, switch the caller
+over, then delete the old ApiUser row. Multi-active-key rotation on a single
+ApiUser will be added when needed.
+
+### Calling the API
+
+```bash
+curl -X POST http://localhost:8000/scraping-requests \
+  -H "Authorization: Bearer deckard_live_<your-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com"}'
+```
+
+## Tests
+
+```bash
+uv run pytest
+```
+
+Tests run against the database configured in `.env`. Each test executes inside
+an outer transaction that is rolled back at teardown, so the tests are
+isolated but assume a live Postgres reachable at `DATABASE_URL`.

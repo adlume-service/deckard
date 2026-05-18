@@ -21,6 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from deckard.database.base import Base
 
 if TYPE_CHECKING:
+    from deckard.database.models.api_user import ApiUser
     from deckard.database.models.client import Client
     from deckard.database.models.llm_processing_job import LLMProcessingJob
     from deckard.database.models.scraping_result import ScrapingResult
@@ -49,11 +50,12 @@ class ScrapingRequest(Base):
             name="ck_scraping_requests_status",
         ),
         UniqueConstraint(
-            "client_id",
+            "api_user_id",
             "idempotency_key",
-            name="uq_scraping_requests_client_idempotency_key",
+            name="uq_scraping_requests_api_user_idempotency_key",
         ),
         Index("ix_scraping_requests_client_id", "client_id"),
+        Index("ix_scraping_requests_api_user_id", "api_user_id"),
         Index("ix_scraping_requests_website_id", "website_id"),
         Index("ix_scraping_requests_status", "status"),
         Index(
@@ -66,6 +68,11 @@ class ScrapingRequest(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
     client_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("clients.id"), nullable=False)
+    api_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("api_users.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     website_id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), ForeignKey("websites.id"), nullable=False)
 
     status: Mapped[str] = mapped_column(String, nullable=False, server_default=text("'pending'"))
@@ -103,6 +110,7 @@ class ScrapingRequest(Base):
 
     # Relationships
     client: Mapped[Client] = relationship(back_populates="scraping_requests")
+    api_user: Mapped[ApiUser | None] = relationship(back_populates="scraping_requests")
     website: Mapped[Website] = relationship(back_populates="scraping_requests")
     scraping_results: Mapped[list[ScrapingResult]] = relationship(
         back_populates="scraping_request",

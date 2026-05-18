@@ -85,7 +85,7 @@ async def _crawl(*, seed_url: str) -> list[ScrapingResult]:
         deep_crawl_strategy=BFSDeepCrawlStrategy(
             max_depth=settings.scrape_max_depth,
             max_pages=settings.scrape_max_pages,
-            include_external=False,
+            include_external=True,
         ),
         page_timeout=settings.scrape_request_timeout_seconds * 1000,
         stream=False,
