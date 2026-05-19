@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import AliasPath, BaseModel, ConfigDict, Field, HttpUrl
 
 from deckard.database.models.llm_processing_job import LLMProcessingJobStatus
 from deckard.database.models.scraping_request import ScrapingRequestStatus
@@ -262,4 +262,68 @@ class ScrapingRequestRead(BaseModel):
             "reaches 'processing'. Each job has its own status; check "
             "`llm_output` on each to know which have finished."
         ),
+    )
+    marketing_stack: dict[str, Any] | None = Field(
+        default=None,
+        validation_alias=AliasPath("request_metadata", "marketing_stack"),
+        description=(
+            "Marketing-stack detection report. Populated once the scrape "
+            "completes and detection succeeds. Null while status is "
+            "'pending'/'scraping', or when detection failed (in which case "
+            "`marketing_stack_error` is set). Shape: `detector_version` (str, currently '1'), "
+            "`detected_at` (ISO 8601), `vendors` (mapping of vendor key to "
+            "`{detected, ids, evidence, extras}`), and `server_side_hints` "
+            "(list of `{signal, confidence, evidence}`). Note: `evidence[*].snippet` "
+            "contains raw HTML/JS fragments capped at ~240 chars per snippet — "
+            "be mindful of token budgets if feeding this into a prompt. The "
+            "shape is still evolving; treat unknown keys as forward-compatible additions."
+        ),
+        json_schema_extra={
+            "example": {
+                "detector_version": "1",
+                "detected_at": "2026-05-19T10:30:00+00:00",
+                "vendors": {
+                    "gtm": {
+                        "detected": True,
+                        "ids": ["GTM-ABC123"],
+                        "evidence": [{"source": "html", "snippet": "googletagmanager.com/gtm.js?id=GTM-ABC123"}],
+                        "extras": {
+                            "id_count": 1,
+                            "load_context": "direct",
+                            "first_party_mode": True,
+                            "source": "html",
+                            "transport_url": "https://sgtm.brand.com",
+                            "consent_mode_v2": "denied",
+                            "container_fetch_status": "ok",
+                            "container_tags": [{"type": "ga4", "id": "G-XYZ"}],
+                        },
+                    }
+                },
+                "server_side_hints": [
+                    {
+                        "signal": "gtm_transport_url_first_party",
+                        "confidence": "high",
+                        "evidence": "GTM transport_url=https://sgtm.brand.com — non-Google subdomain of requested host",
+                    }
+                ],
+            }
+        },
+    )
+    marketing_stack_error: dict[str, Any] | None = Field(
+        default=None,
+        validation_alias=AliasPath("request_metadata", "marketing_stack_error"),
+        description=(
+            "Set instead of `marketing_stack` when detection raised or had no "
+            "usable seed HTML to inspect. Null on success and while detection "
+            "has not yet run. Shape: `error_code` (str, e.g. `'no_seed_html'` "
+            "or an exception class name like `'RuntimeError'`), `error_message` "
+            "(str, human-readable), `detector_version` (str)."
+        ),
+        json_schema_extra={
+            "example": {
+                "error_code": "no_seed_html",
+                "error_message": "Seed page raw HTML is empty; detection skipped.",
+                "detector_version": "1",
+            }
+        },
     )

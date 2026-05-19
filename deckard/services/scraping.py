@@ -18,6 +18,11 @@ from deckard.config import get_settings
 from deckard.constants import TOKEN_ENCODING
 from deckard.database.models import ScrapingRequest, ScrapingResult
 from deckard.database.session import get_sessionmaker
+from deckard.services.marketing_stack import (
+    MARKETING_STACK_DETECTOR_VERSION,
+    detect_marketing_stack,
+    enrich_with_gtm_container,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +47,7 @@ async def process_scraping_request(request_id: uuid.UUID) -> None:
         await _mark_scraping(session, request)
 
         try:
-            results = await _crawl(seed_url=request.requested_url)
+            results, seed_headers = await _crawl(seed_url=request.requested_url)
         except Exception as exc:
             logger.exception("Scrape failed for request %s", request_id)
             await _mark_failed(session, request, exc)
@@ -54,6 +59,12 @@ async def process_scraping_request(request_id: uuid.UUID) -> None:
             session.add(result)
 
         await _mark_scraped(session, request)
+        await _detect_and_persist_marketing_stack(
+            session=session,
+            request=request,
+            seed_result=results[0] if results else None,
+            seed_headers=seed_headers,
+        )
         await session.commit()
         logger.info("Scrape completed for %s — %d pages captured", request_id, len(results))
 
@@ -77,8 +88,12 @@ async def _mark_failed(session: AsyncSession, request: ScrapingRequest, exc: Bas
     request.error_message = str(exc)[:1000]
 
 
-async def _crawl(*, seed_url: str) -> list[ScrapingResult]:
-    """Run a depth-limited BFS crawl from `seed_url`, returning unsaved ScrapingResult rows."""
+async def _crawl(*, seed_url: str) -> tuple[list[ScrapingResult], dict[str, str] | None]:
+    """Run a depth-limited BFS crawl from `seed_url`.
+
+    Returns the unsaved ScrapingResult rows and the seed page's response headers
+    (held in memory, not persisted — used by the marketing-stack detector).
+    """
     settings = get_settings()
 
     run_config = CrawlerRunConfig(
@@ -95,7 +110,13 @@ async def _crawl(*, seed_url: str) -> list[ScrapingResult]:
     async with AsyncWebCrawler(config=browser_config) as crawler:
         crawl_results: list[CrawlResult] = await crawler.arun(url=seed_url, config=run_config)
 
-    return [_to_scraping_result(result) for result in crawl_results]
+    seed_headers: dict[str, str] | None = None
+    if crawl_results:
+        raw_headers = getattr(crawl_results[0], "response_headers", None)
+        if isinstance(raw_headers, dict):
+            seed_headers = {str(k): str(v) for k, v in raw_headers.items()}
+
+    return [_to_scraping_result(result) for result in crawl_results], seed_headers
 
 
 def _to_scraping_result(result: CrawlResult) -> ScrapingResult:
@@ -111,3 +132,49 @@ def _to_scraping_result(result: CrawlResult) -> ScrapingResult:
         status_code=result.status_code,
         tokens=len(TOKEN_ENCODING.encode(markdown)) if markdown else None,
     )
+
+
+async def _detect_and_persist_marketing_stack(
+    *,
+    session: AsyncSession,
+    request: ScrapingRequest,
+    seed_result: ScrapingResult | None,
+    seed_headers: dict[str, str] | None,
+) -> None:
+    """Run static marketing-stack detection against the seed page and persist
+    the result on ``request.request_metadata``.
+
+    Isolated try/except: detection failure is recorded under
+    ``marketing_stack_error`` but never flips the request to ``failed``.
+    """
+    if seed_result is None or not seed_result.raw_html:
+        request.request_metadata = {
+            **request.request_metadata,
+            "marketing_stack_error": {
+                "error_code": "no_seed_html",
+                "error_message": "No seed page HTML available for marketing-stack detection.",
+                "detector_version": MARKETING_STACK_DETECTOR_VERSION,
+            },
+        }
+        return
+
+    try:
+        stack = detect_marketing_stack(
+            html=seed_result.raw_html,
+            response_headers=seed_headers or {},
+            seed_url=request.requested_url,
+        )
+        stack = await enrich_with_gtm_container(stack)
+    except Exception as exc:
+        logger.exception("Marketing-stack detection failed for request %s", request.id)
+        request.request_metadata = {
+            **request.request_metadata,
+            "marketing_stack_error": {
+                "error_code": type(exc).__name__,
+                "error_message": str(exc)[:1000],
+                "detector_version": MARKETING_STACK_DETECTOR_VERSION,
+            },
+        }
+        return
+
+    request.request_metadata = {**request.request_metadata, "marketing_stack": stack}

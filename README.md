@@ -6,10 +6,12 @@ LLM context budget, and extracts structured mar-tech fields from the result.
 One submitted URL turns into:
 
 1. a deep BFS crawl of the site (via [crawl4ai](https://github.com/unclecode/crawl4ai)),
-2. an OpenAI extraction call that returns a typed JSON object
+2. a static marketing-stack scan of the seed page (detected vendors,
+   GTM container parse, server-side tracking hints),
+3. an OpenAI extraction call that returns a typed JSON object
    (`target_audience`, `tone_of_voice`, `pricing_and_offer`, `location`,
    `usp`, `event_dates`),
-3. a row per API call so spend can be attributed back to the originating
+4. a row per API call so spend can be attributed back to the originating
    `ApiUser` and `Client`.
 
 ---
@@ -33,12 +35,14 @@ flowchart LR
     subgraph BG["Background tasks"]
         direction TB
         Scraper[Scraping service<br/>crawl4ai BFS deep-crawl]
+        Detector[Marketing-stack detector<br/>static scan + GTM container parse]
         Extractor[Extraction service<br/>OpenAI Responses API]
         Ranker[(Small URL-ranker LLM<br/>only when over budget)]
     end
 
     DB[(PostgreSQL<br/>SQLAlchemy / asyncpg)]
     Web[(Target websites)]
+    GTM[(googletagmanager.com<br/>gtm.js container)]
     OAI[(OpenAI API)]
 
     Caller -->|Bearer deckard_live_*| Auth
@@ -52,6 +56,9 @@ flowchart LR
 
     Scraper --> Web
     Scraper -->|ScrapingResult rows| DB
+    Scraper -->|seed HTML + headers| Detector
+    Detector -.->|optional gtm.js fetch| GTM
+    Detector -->|marketing_stack on request_metadata| DB
 
     Extractor -->|load pages| DB
     Extractor --> Ranker
@@ -88,7 +95,10 @@ sequenceDiagram
     API->>S: process_scraping_request(id)
     S->>DB: status = scraping
     S->>S: BFS deep-crawl from seed URL
-    S->>DB: persist ScrapingResult per page<br/>status = scraped (or failed)
+    S->>DB: persist ScrapingResult per page
+    S->>S: detect marketing stack on seed HTML
+    S->>S: (optional) fetch + parse GTM container
+    S->>DB: marketing_stack on request_metadata<br/>status = scraped (or failed)
 
     API->>E: process_llm_job(id)
     E->>DB: load ScrapingRequest + results
@@ -121,6 +131,42 @@ stateDiagram-v2
     failed --> [*]
     cancelled --> [*]
 ```
+
+### Marketing-stack detection
+
+At the tail of each scrape — after the per-page `ScrapingResult` rows are
+written and before the request flips to `scraped` — a static, pattern-based
+detector scans the seed page's raw HTML and response headers and writes the
+result to `ScrapingRequest.request_metadata.marketing_stack` in the same
+transaction that flips the status. There is no separate table.
+
+The catalogue covers ~30 vendors across analytics (GTM, GA4, UA),
+client-side pixels (Meta, LinkedIn, TikTok, Pinterest, Reddit, Snap, Google
+Ads, Microsoft UET), product analytics (Hotjar, Segment, Mixpanel,
+Amplitude), MAP/CRM (HubSpot, Klaviyo, Marketo, Pardot, Braze, Customer.io,
+Intercom), consent management (OneTrust, Cookiebot, Didomi, Usercentrics,
+Termly), A/B testing (Optimizely, VWO), reviews (Yotpo, Trustpilot, Okendo),
+and ecom platform fingerprints (Shopify, Magento, BigCommerce, WooCommerce).
+
+When GTM is found, the orchestrator makes a single best-effort HTTPS request
+to `googletagmanager.com/gtm.js?id=<container_id>`, parses the container
+body, and enriches the GTM entry with `container_tags`, `transport_url`,
+and `consent_mode_v2`. Vendors found *only* inside the container (e.g. a
+Meta Pixel fired via GTM with no client-side `fbq()` on the page) are
+synthesised with `extras.load_context = "gtm"` and `extras.source = "gtm_container"`,
+so downstream consumers can tell "loaded directly" from "configured in GTM".
+
+Server-side tracking is reported as `server_side_hints` with calibrated
+confidence (`low | medium | high`) and visible evidence — no DNS lookups in
+v1, so `high` requires either a direct script reference to a known sGTM
+vendor domain (`stape.io`, `addingwell.com`) or a GTM `transport_url`
+pointing to a non-Google subdomain of the requested host.
+
+Detection runs in an isolated try/except: on any failure the request still
+completes as `scraped`, and `marketing_stack_error` is written under
+`request_metadata` instead of `marketing_stack`. Both keys are surfaced as
+top-level fields on the GET response via Pydantic `AliasPath` — the SA
+model stays free of presentation-layer concerns.
 
 ### Token-budget fitting
 
@@ -351,9 +397,10 @@ curl http://localhost:8000/scraping-requests/<id> \
   -H "Authorization: Bearer deckard_live_<your-key>"
 ```
 
-When the request reaches `completed`, the GET response contains both the
-per-page `scraping_result` payloads and the parsed extraction under
-`llm_processing_jobs[].output`.
+When the request reaches `completed`, the GET response contains the
+per-page `scraping_result` payloads, the parsed extraction under
+`llm_processing_jobs[].output`, and the marketing-stack detection report
+under `marketing_stack` (or `marketing_stack_error` if detection failed).
 
 Supplying the same `idempotency_key` from the same ApiUser returns the
 original request unchanged — safe to retry.

@@ -54,6 +54,8 @@ class Settings(BaseSettings):
 
     openai_url_ranker_model: str = "gpt-5.4-nano"
 
+    marketing_stack_gtm_fetch_timeout_seconds: float = 10.0
+
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",
