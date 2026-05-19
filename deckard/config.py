@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     # TPM is the tighter ceiling. 85% leaves headroom for reasoning + output, which also count against TPM.
     openai_context_token_budget: int = int(200_000 * 0.85)
     openai_request_timeout_seconds: int = 120
-    extraction_prompt_version: str = "v1"
+    extraction_prompt_version: str = "v2"
 
     openai_url_ranker_model: str = "gpt-5.4-nano"
 
