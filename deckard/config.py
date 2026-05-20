@@ -28,6 +28,12 @@ ReasoningEffort = Literal[
 ]
 
 
+PageSpeedStrategy = Literal[
+    "mobile",
+    "desktop",
+]
+
+
 class Settings(BaseSettings):
     app_name: str = "Deckard"
 
@@ -55,6 +61,10 @@ class Settings(BaseSettings):
     openai_url_ranker_model: str = "gpt-5.4-nano"
 
     marketing_stack_gtm_fetch_timeout_seconds: float = 10.0
+
+    page_speed_insights_api: str | None = None
+    page_speed_insights_timeout_seconds: float = 30.0
+    page_speed_insights_strategy: PageSpeedStrategy = "mobile"
 
     model_config = SettingsConfigDict(
         env_file=".env",

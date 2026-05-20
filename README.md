@@ -8,10 +8,13 @@ One submitted URL turns into:
 1. a deep BFS crawl of the site (via [crawl4ai](https://github.com/unclecode/crawl4ai)),
 2. a static marketing-stack scan of the seed page (detected vendors,
    GTM container parse, server-side tracking hints),
-3. an OpenAI extraction call that returns a typed JSON object
+3. a Google PageSpeed Insights audit of the seed URL (Lighthouse
+   performance score, Core Web Vitals, top opportunities — best-effort,
+   skipped silently when no API key is configured),
+4. an OpenAI extraction call that returns a typed JSON object
    (`target_audience`, `tone_of_voice`, `pricing_and_offer`, `location`,
    `usp`, `event_dates`),
-4. a row per API call so spend can be attributed back to the originating
+5. a row per API call so spend can be attributed back to the originating
    `ApiUser` and `Client`.
 
 ---
@@ -36,6 +39,7 @@ flowchart LR
         direction TB
         Scraper[Scraping service<br/>crawl4ai BFS deep-crawl]
         Detector[Marketing-stack detector<br/>static scan + GTM container parse]
+        PerfAudit[Performance auditor<br/>Google PageSpeed Insights v5]
         Extractor[Extraction service<br/>OpenAI Responses API]
         Ranker[(Small URL-ranker LLM<br/>only when over budget)]
     end
@@ -43,6 +47,7 @@ flowchart LR
     DB[(PostgreSQL<br/>SQLAlchemy / asyncpg)]
     Web[(Target websites)]
     GTM[(googletagmanager.com<br/>gtm.js container)]
+    PSI[(googleapis.com<br/>PageSpeed Insights API)]
     OAI[(OpenAI API)]
 
     Caller -->|Bearer deckard_live_*| Auth
@@ -59,6 +64,9 @@ flowchart LR
     Scraper -->|seed HTML + headers| Detector
     Detector -.->|optional gtm.js fetch| GTM
     Detector -->|marketing_stack on request_metadata| DB
+    Scraper -->|seed URL| PerfAudit
+    PerfAudit --> PSI
+    PerfAudit -->|performance on request_metadata| DB
 
     Extractor -->|load pages| DB
     Extractor --> Ranker
@@ -82,6 +90,7 @@ sequenceDiagram
     participant API as FastAPI
     participant DB as Postgres
     participant S as Scraper (crawl4ai)
+    participant P as PageSpeed Insights
     participant E as Extractor
     participant O as OpenAI
 
@@ -98,7 +107,9 @@ sequenceDiagram
     S->>DB: persist ScrapingResult per page
     S->>S: detect marketing stack on seed HTML
     S->>S: (optional) fetch + parse GTM container
-    S->>DB: marketing_stack on request_metadata<br/>status = scraped (or failed)
+    S->>P: runPagespeed (if API key configured)
+    P-->>S: Lighthouse score + Core Web Vitals
+    S->>DB: marketing_stack + performance on request_metadata<br/>status = scraped (or failed)
 
     API->>E: process_llm_job(id)
     E->>DB: load ScrapingRequest + results
@@ -167,6 +178,48 @@ completes as `scraped`, and `marketing_stack_error` is written under
 `request_metadata` instead of `marketing_stack`. Both keys are surfaced as
 top-level fields on the GET response via Pydantic `AliasPath` — the SA
 model stays free of presentation-layer concerns.
+
+### Performance audit (PageSpeed Insights)
+
+Right after the marketing-stack write — still inside the same transaction
+that flips status to `scraped` — Deckard makes a single call to Google's
+PageSpeed Insights v5 API against the seed URL and persists a trimmed
+report to `ScrapingRequest.request_metadata.performance`. As with the
+marketing-stack detector, there is no separate table.
+
+The free Google quota is 25k requests/day with a free API key, and
+typical PSI latency is 10–30s per call (occasionally 60s+). Authentication
+goes via the `X-goog-api-key` header, **not** the `key` query parameter,
+so the key never appears in URLs that might be echoed back in error
+messages. The persisted `performance_error.error_message` is also
+defensively scrubbed of the key as belt-and-suspenders.
+
+The raw PSI response is 1–2 MB; we trim it down to ~5–15 KB by keeping
+only what a marketing audit actually consumes:
+
+- the Lighthouse `performance` category score (0–100),
+- the canonical lab metrics — FCP, LCP, Speed Index, TTI, TBT, CLS, and
+  server response time (TTFB),
+- real-user CrUX data under `field_data` when available (page-level
+  preferred over origin-level; `source` reflects which one was used),
+- the top 5 opportunities ranked by `savings_ms` then `savings_bytes`,
+- the top 5 failing diagnostics (`score < 0.9`).
+
+The HTTP client retries once on transient failures (`httpx` transport
+errors, 429, and 5xx). Non-retryable 4xx (400/401/403) raises
+immediately. Default timeout is 30s per attempt.
+
+The audit is **best-effort and entirely optional**. When
+`PAGE_SPEED_INSIGHTS_API` is unset, the call is skipped silently and
+neither `performance` nor `performance_error` is written — this is a
+configuration choice, not a failure. On any other failure (timeout,
+exhausted retries, malformed response), `performance_error` is written
+with the exception class, scrubbed message, and detector version, and
+the request still completes as `scraped`.
+
+Both `performance` and `performance_error` are surfaced as top-level
+fields on the GET response via the same `AliasPath` pattern used for
+marketing-stack.
 
 ### Token-budget fitting
 
@@ -288,6 +341,7 @@ Create a `.env` file:
 ```env
 DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/deckard
 OPENAI_API_KEY=sk-...
+PAGE_SPEED_INSIGHTS_API=AIza...  # optional; omit to skip the perf audit
 LOG_LEVEL=DEBUG
 DEBUG=true
 ```
@@ -399,8 +453,10 @@ curl http://localhost:8000/scraping-requests/<id> \
 
 When the request reaches `completed`, the GET response contains the
 per-page `scraping_result` payloads, the parsed extraction under
-`llm_processing_jobs[].output`, and the marketing-stack detection report
-under `marketing_stack` (or `marketing_stack_error` if detection failed).
+`llm_processing_jobs[].output`, the marketing-stack detection report
+under `marketing_stack` (or `marketing_stack_error` if detection failed),
+and the PageSpeed Insights report under `performance` (or
+`performance_error`, or null when no API key is configured).
 
 Supplying the same `idempotency_key` from the same ApiUser returns the
 original request unchanged — safe to retry.

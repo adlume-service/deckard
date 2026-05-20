@@ -1,0 +1,134 @@
+{
+  "kind": "pagespeedonline#result",
+  "captchaResult": "CAPTCHA_NOT_NEEDED",
+  "id": "https://www.brand.com/",
+  "loadingExperience": {
+    "id": "https://www.brand.com/",
+    "metrics": {
+      "LARGEST_CONTENTFUL_PAINT_MS": {
+        "percentile": 3200,
+        "category": "AVERAGE"
+      },
+      "CUMULATIVE_LAYOUT_SHIFT_SCORE": {
+        "percentile": 5,
+        "category": "GOOD"
+      }
+    },
+    "overall_category": "AVERAGE"
+  },
+  "lighthouseResult": {
+    "requestedUrl": "https://www.brand.com/",
+    "finalUrl": "https://www.brand.com/",
+    "lighthouseVersion": "11.0.0",
+    "categories": {
+      "performance": {
+        "id": "performance",
+        "title": "Performance",
+        "score": 0.62
+      }
+    },
+    "audits": {
+      "first-contentful-paint": {
+        "id": "first-contentful-paint",
+        "title": "First Contentful Paint",
+        "score": 0.8,
+        "numericValue": 1820.4
+      },
+      "largest-contentful-paint": {
+        "id": "largest-contentful-paint",
+        "title": "Largest Contentful Paint",
+        "score": 0.5,
+        "numericValue": 3140.2
+      },
+      "speed-index": {
+        "id": "speed-index",
+        "title": "Speed Index",
+        "score": 0.4,
+        "numericValue": 4100.0
+      },
+      "interactive": {
+        "id": "interactive",
+        "title": "Time to Interactive",
+        "score": 0.3,
+        "numericValue": 5200.0
+      },
+      "total-blocking-time": {
+        "id": "total-blocking-time",
+        "title": "Total Blocking Time",
+        "score": 0.6,
+        "numericValue": 290.0
+      },
+      "cumulative-layout-shift": {
+        "id": "cumulative-layout-shift",
+        "title": "Cumulative Layout Shift",
+        "score": 0.9,
+        "numericValue": 0.0823
+      },
+      "server-response-time": {
+        "id": "server-response-time",
+        "title": "Initial server response time was short",
+        "score": 1.0,
+        "numericValue": 410.0
+      },
+      "unused-javascript": {
+        "id": "unused-javascript",
+        "title": "Reduce unused JavaScript",
+        "description": "Reduce unused JavaScript and defer loading of scripts.",
+        "displayValue": "Potential savings of 84 KiB",
+        "score": 0.3,
+        "details": {
+          "type": "opportunity",
+          "overallSavingsMs": 1200,
+          "overallSavingsBytes": 84000
+        }
+      },
+      "render-blocking-resources": {
+        "id": "render-blocking-resources",
+        "title": "Eliminate render-blocking resources",
+        "description": "Resources are blocking the first paint of your page.",
+        "displayValue": "Potential savings of 450 ms",
+        "score": 0.6,
+        "details": {
+          "type": "opportunity",
+          "overallSavingsMs": 450,
+          "overallSavingsBytes": 0
+        }
+      },
+      "uses-text-compression": {
+        "id": "uses-text-compression",
+        "title": "Enable text compression",
+        "description": "Text-based resources should be served with compression.",
+        "score": 1.0,
+        "details": {
+          "type": "opportunity",
+          "overallSavingsMs": 0,
+          "overallSavingsBytes": 0
+        }
+      },
+      "uses-long-cache-ttl": {
+        "id": "uses-long-cache-ttl",
+        "title": "Serve static assets with an efficient cache policy",
+        "description": "A long cache lifetime can speed up repeat visits.",
+        "displayValue": "12 resources found",
+        "score": 0.5,
+        "details": {
+          "type": "table"
+        }
+      },
+      "uses-passive-event-listeners": {
+        "id": "uses-passive-event-listeners",
+        "title": "Use passive listeners to improve scrolling performance",
+        "description": "Touch and wheel event listeners can delay scrolling.",
+        "score": 0.8,
+        "details": {
+          "type": "table"
+        }
+      },
+      "viewport": {
+        "id": "viewport",
+        "title": "Has a `<meta name=viewport>` tag with `width` or `initial-scale`",
+        "score": 1.0
+      }
+    }
+  }
+}

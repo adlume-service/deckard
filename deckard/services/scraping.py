@@ -23,6 +23,10 @@ from deckard.services.marketing_stack import (
     detect_marketing_stack,
     enrich_with_gtm_container,
 )
+from deckard.services.performance import (
+    PERFORMANCE_DETECTOR_VERSION,
+    detect_performance,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +69,7 @@ async def process_scraping_request(request_id: uuid.UUID) -> None:
             seed_result=results[0] if results else None,
             seed_headers=seed_headers,
         )
+        await _detect_and_persist_performance(session=session, request=request)
         await session.commit()
         logger.info("Scrape completed for %s — %d pages captured", request_id, len(results))
 
@@ -178,3 +183,38 @@ async def _detect_and_persist_marketing_stack(
         return
 
     request.request_metadata = {**request.request_metadata, "marketing_stack": stack}
+
+
+async def _detect_and_persist_performance(*, session: AsyncSession, request: ScrapingRequest) -> None:
+    """Run Google PageSpeed Insights against the seed URL and persist the report.
+
+    Skipped silently when ``page_speed_insights_api`` is unset — not having a
+    key is a configuration choice, not a failure. Any other failure is
+    isolated: it writes ``performance_error`` and leaves the request in
+    ``scraped``.
+    """
+    api_key = get_settings().page_speed_insights_api
+    if not api_key:
+        return
+
+    try:
+        report = await detect_performance(request.requested_url)
+    except Exception as exc:
+        logger.exception("PageSpeed Insights detection failed for request %s", request.id)
+        # Belt-and-suspenders: even though we now pass the key as a header, scrub
+        # it from any error message we persist so a future regression (or a third
+        # party echoing our params) can't leak it via the GET endpoint. Redact
+        # before truncating — otherwise a key straddling the 1000-char boundary
+        # would leak a partial prefix.
+        error_message = str(exc).replace(api_key, "<redacted>")[:1000]
+        request.request_metadata = {
+            **request.request_metadata,
+            "performance_error": {
+                "error_code": type(exc).__name__,
+                "error_message": error_message,
+                "detector_version": PERFORMANCE_DETECTOR_VERSION,
+            },
+        }
+        return
+
+    request.request_metadata = {**request.request_metadata, "performance": report}
