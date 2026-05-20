@@ -83,21 +83,22 @@ async def fetch_pagespeed_insights(
         raise last_exc
 
 
-async def detect_performance(url: str) -> dict[str, Any]:
+async def detect_performance(url: str, *, strategy: str) -> dict[str, Any]:
     """Run a PageSpeed Insights audit against ``url`` and return the trimmed report.
 
-    Returns the dict the scraper writes to ``request_metadata.performance``.
+    Returns the dict the scraper writes to ``request_metadata.performance[strategy]``.
     Callers must check ``settings.page_speed_insights_api`` and skip when
-    unset — this function assumes the key is configured.
+    unset — this function assumes the key is configured. The orchestrator owns
+    the mobile-vs-desktop decision; this function audits a single strategy.
     """
     settings = get_settings()
     payload = await fetch_pagespeed_insights(
         url,
         api_key=settings.page_speed_insights_api or "",
-        strategy=settings.page_speed_insights_strategy,
+        strategy=strategy,
         timeout_s=settings.page_speed_insights_timeout_seconds,
     )
-    report = parse_pagespeed_response(payload, strategy=settings.page_speed_insights_strategy)
+    report = parse_pagespeed_response(payload, strategy=strategy)
     report["detector_version"] = PERFORMANCE_DETECTOR_VERSION
     report["fetched_at"] = datetime.now(UTC).isoformat()
     return report

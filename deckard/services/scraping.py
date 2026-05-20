@@ -6,6 +6,7 @@ breadth-first deep-crawl strategy against the seed URL, persists one
 `scraped` or `failed`.
 """
 
+import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
@@ -186,35 +187,54 @@ async def _detect_and_persist_marketing_stack(
 
 
 async def _detect_and_persist_performance(*, session: AsyncSession, request: ScrapingRequest) -> None:
-    """Run Google PageSpeed Insights against the seed URL and persist the report.
+    """Run Google PageSpeed Insights against the seed URL and persist per-strategy reports.
 
     Skipped silently when ``page_speed_insights_api`` is unset — not having a
-    key is a configuration choice, not a failure. Any other failure is
-    isolated: it writes ``performance_error`` and leaves the request in
-    ``scraped``.
+    key is a configuration choice, not a failure. When configured for
+    ``"both"``, mobile + desktop run concurrently; per-strategy failures are
+    isolated under ``performance_error[strategy]`` and never flip the request
+    to ``failed``.
     """
-    api_key = get_settings().page_speed_insights_api
+    settings = get_settings()
+    api_key = settings.page_speed_insights_api
     if not api_key:
         return
 
-    try:
-        report = await detect_performance(request.requested_url)
-    except Exception as exc:
-        logger.exception("PageSpeed Insights detection failed for request %s", request.id)
-        # Belt-and-suspenders: even though we now pass the key as a header, scrub
-        # it from any error message we persist so a future regression (or a third
-        # party echoing our params) can't leak it via the GET endpoint. Redact
-        # before truncating — otherwise a key straddling the 1000-char boundary
-        # would leak a partial prefix.
-        error_message = str(exc).replace(api_key, "<redacted>")[:1000]
-        request.request_metadata = {
-            **request.request_metadata,
-            "performance_error": {
-                "error_code": type(exc).__name__,
-                "error_message": error_message,
-                "detector_version": PERFORMANCE_DETECTOR_VERSION,
-            },
-        }
-        return
+    strategies = (
+        ["mobile", "desktop"]
+        if settings.page_speed_insights_strategy == "both"
+        else [settings.page_speed_insights_strategy]
+    )
+    results = await asyncio.gather(
+        *(detect_performance(request.requested_url, strategy=s) for s in strategies),
+        return_exceptions=True,
+    )
 
-    request.request_metadata = {**request.request_metadata, "performance": report}
+    reports: dict[str, dict] = {}
+    errors: dict[str, dict] = {}
+    for strategy, result in zip(strategies, results, strict=True):
+        if isinstance(result, Exception):
+            logger.exception(
+                "PageSpeed Insights detection failed for request %s strategy=%s",
+                request.id,
+                strategy,
+                exc_info=result,
+            )
+            # Belt-and-suspenders: scrub key from any persisted error message before
+            # truncating — otherwise a key straddling the 1000-char boundary would
+            # leak a partial prefix.
+            errors[strategy] = {
+                "error_code": type(result).__name__,
+                "error_message": str(result).replace(api_key, "<redacted>")[:1000],
+                "detector_version": PERFORMANCE_DETECTOR_VERSION,
+            }
+        else:
+            reports[strategy] = result
+
+    # Single rebind to preserve SQLAlchemy JSONB change detection.
+    new_metadata = {**request.request_metadata}
+    if reports:
+        new_metadata["performance"] = reports
+    if errors:
+        new_metadata["performance_error"] = errors
+    request.request_metadata = new_metadata

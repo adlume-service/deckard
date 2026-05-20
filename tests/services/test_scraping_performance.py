@@ -110,8 +110,8 @@ async def _patch_gtm_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 async def _patch_detect_performance(monkeypatch: pytest.MonkeyPatch) -> None:
-    async def _fake(url: str) -> dict[str, Any]:
-        report = parse_pagespeed_response(_load_psi_payload(), strategy="mobile")
+    async def _fake(url: str, *, strategy: str) -> dict[str, Any]:
+        report = parse_pagespeed_response(_load_psi_payload(), strategy=strategy)
         report["detector_version"] = "1"
         report["fetched_at"] = "2026-05-19T10:30:00+00:00"
         return report
@@ -137,11 +137,132 @@ async def test_performance_report_persisted(
     await db_session.refresh(refreshed)
     assert refreshed.status == "scraped"
     perf = refreshed.request_metadata["performance"]
-    assert perf["detector_version"] == "1"
-    assert perf["strategy"] == "mobile"
-    assert perf["score"] == 62
-    assert perf["metrics"]["largest_contentful_paint_ms"] == 3140
+    assert perf["mobile"]["detector_version"] == "1"
+    assert perf["mobile"]["strategy"] == "mobile"
+    assert perf["mobile"]["score"] == 62
+    assert perf["mobile"]["metrics"]["largest_contentful_paint_ms"] == 3140
     assert "performance_error" not in refreshed.request_metadata
+
+
+async def test_both_strategies_succeed(
+    db_session: AsyncSession,
+    authed_api_user: AuthedApiUser,
+    monkeypatch: pytest.MonkeyPatch,
+    patched_sessionmaker: None,
+    psi_key_configured: None,
+) -> None:
+    await _patch_crawl(monkeypatch)
+    await _patch_gtm_fetch(monkeypatch)
+    await _patch_detect_performance(monkeypatch)
+
+    request = await _make_pending_request(db_session, authed_api_user.api_user.id)
+    await process_scraping_request(request.id)
+
+    refreshed = (await db_session.execute(select(ScrapingRequest).where(ScrapingRequest.id == request.id))).scalar_one()
+    await db_session.refresh(refreshed)
+    assert refreshed.status == "scraped"
+    perf = refreshed.request_metadata["performance"]
+    assert perf["mobile"]["strategy"] == "mobile"
+    assert perf["desktop"]["strategy"] == "desktop"
+    assert "performance_error" not in refreshed.request_metadata
+
+
+async def test_partial_failure_mobile_ok_desktop_raises(
+    db_session: AsyncSession,
+    authed_api_user: AuthedApiUser,
+    monkeypatch: pytest.MonkeyPatch,
+    patched_sessionmaker: None,
+    psi_key_configured: None,
+) -> None:
+    await _patch_crawl(monkeypatch)
+    await _patch_gtm_fetch(monkeypatch)
+
+    async def _fake(url: str, *, strategy: str) -> dict[str, Any]:
+        if strategy == "desktop":
+            raise RuntimeError("desktop exploded")
+        report = parse_pagespeed_response(_load_psi_payload(), strategy=strategy)
+        report["detector_version"] = "1"
+        report["fetched_at"] = "2026-05-19T10:30:00+00:00"
+        return report
+
+    monkeypatch.setattr(scraping_module, "detect_performance", _fake)
+
+    request = await _make_pending_request(db_session, authed_api_user.api_user.id)
+    await process_scraping_request(request.id)
+
+    refreshed = (await db_session.execute(select(ScrapingRequest).where(ScrapingRequest.id == request.id))).scalar_one()
+    await db_session.refresh(refreshed)
+    assert refreshed.status == "scraped"
+    perf = refreshed.request_metadata["performance"]
+    assert "mobile" in perf
+    assert "desktop" not in perf
+    err = refreshed.request_metadata["performance_error"]
+    assert "desktop" in err
+    assert "mobile" not in err
+    assert err["desktop"]["error_code"] == "RuntimeError"
+
+
+async def test_both_strategies_fail(
+    db_session: AsyncSession,
+    authed_api_user: AuthedApiUser,
+    monkeypatch: pytest.MonkeyPatch,
+    patched_sessionmaker: None,
+    psi_key_configured: None,
+) -> None:
+    await _patch_crawl(monkeypatch)
+    await _patch_gtm_fetch(monkeypatch)
+
+    async def _boom(url: str, *, strategy: str) -> dict[str, Any]:
+        raise RuntimeError(f"{strategy} exploded")
+
+    monkeypatch.setattr(scraping_module, "detect_performance", _boom)
+
+    request = await _make_pending_request(db_session, authed_api_user.api_user.id)
+    await process_scraping_request(request.id)
+
+    refreshed = (await db_session.execute(select(ScrapingRequest).where(ScrapingRequest.id == request.id))).scalar_one()
+    await db_session.refresh(refreshed)
+    assert refreshed.status == "scraped"
+    assert "performance" not in refreshed.request_metadata
+    err = refreshed.request_metadata["performance_error"]
+    assert err["mobile"]["error_code"] == "RuntimeError"
+    assert err["desktop"]["error_code"] == "RuntimeError"
+    assert "mobile exploded" in err["mobile"]["error_message"]
+    assert "desktop exploded" in err["desktop"]["error_message"]
+
+
+async def test_mobile_only_branching(
+    db_session: AsyncSession,
+    authed_api_user: AuthedApiUser,
+    monkeypatch: pytest.MonkeyPatch,
+    patched_sessionmaker: None,
+    psi_key_configured: None,
+) -> None:
+    settings = get_settings()
+    monkeypatch.setattr(settings, "page_speed_insights_strategy", "mobile")
+    await _patch_crawl(monkeypatch)
+    await _patch_gtm_fetch(monkeypatch)
+
+    called_with: list[str] = []
+
+    async def _fake(url: str, *, strategy: str) -> dict[str, Any]:
+        called_with.append(strategy)
+        report = parse_pagespeed_response(_load_psi_payload(), strategy=strategy)
+        report["detector_version"] = "1"
+        report["fetched_at"] = "2026-05-19T10:30:00+00:00"
+        return report
+
+    monkeypatch.setattr(scraping_module, "detect_performance", _fake)
+
+    request = await _make_pending_request(db_session, authed_api_user.api_user.id)
+    await process_scraping_request(request.id)
+
+    refreshed = (await db_session.execute(select(ScrapingRequest).where(ScrapingRequest.id == request.id))).scalar_one()
+    await db_session.refresh(refreshed)
+    perf = refreshed.request_metadata["performance"]
+    assert list(perf.keys()) == ["mobile"]
+    assert "performance_error" not in refreshed.request_metadata
+    assert called_with == ["mobile"]
 
 
 async def test_psi_failure_isolated_from_request_status(
@@ -154,7 +275,7 @@ async def test_psi_failure_isolated_from_request_status(
     await _patch_crawl(monkeypatch)
     await _patch_gtm_fetch(monkeypatch)
 
-    async def _boom(url: str) -> dict[str, Any]:
+    async def _boom(url: str, *, strategy: str) -> dict[str, Any]:
         raise RuntimeError("psi exploded")
 
     monkeypatch.setattr(scraping_module, "detect_performance", _boom)
@@ -167,8 +288,9 @@ async def test_psi_failure_isolated_from_request_status(
     assert refreshed.status == "scraped"
     assert "performance" not in refreshed.request_metadata
     err = refreshed.request_metadata["performance_error"]
-    assert err["error_code"] == "RuntimeError"
-    assert "psi exploded" in err["error_message"]
+    assert err["mobile"]["error_code"] == "RuntimeError"
+    assert "psi exploded" in err["mobile"]["error_message"]
+    assert err["desktop"]["error_code"] == "RuntimeError"
 
 
 async def test_psi_skipped_silently_when_key_unset(
@@ -184,7 +306,7 @@ async def test_psi_skipped_silently_when_key_unset(
 
     called = False
 
-    async def _should_not_be_called(url: str) -> dict[str, Any]:
+    async def _should_not_be_called(url: str, *, strategy: str) -> dict[str, Any]:
         nonlocal called
         called = True
         return {}
@@ -219,11 +341,11 @@ async def test_psi_error_message_redacts_api_key(
     api_key = get_settings().page_speed_insights_api
     assert api_key is not None
 
-    async def _boom(url: str) -> dict[str, Any]:
+    async def _boom(url: str, *, strategy: str) -> dict[str, Any]:
         # Fabricate a leaky URL that contains the API key, as old PSI requests did.
         leaky_url = (
             f"https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
-            f"?url={url}&key={api_key}&strategy=mobile&category=performance"
+            f"?url={url}&key={api_key}&strategy={strategy}&category=performance"
         )
         request = httpx.Request("GET", leaky_url)
         response = httpx.Response(400, request=request, text="bad request")
@@ -240,7 +362,7 @@ async def test_psi_error_message_redacts_api_key(
 
     refreshed = (await db_session.execute(select(ScrapingRequest).where(ScrapingRequest.id == request.id))).scalar_one()
     await db_session.refresh(refreshed)
-    err = refreshed.request_metadata["performance_error"]
+    err = refreshed.request_metadata["performance_error"]["mobile"]
     assert err["error_code"] == "HTTPStatusError"
     assert api_key not in err["error_message"]
     assert "<redacted>" in err["error_message"]
@@ -271,5 +393,6 @@ async def test_get_endpoint_exposes_performance(
     assert body["performance_error"] is None
     perf = body["performance"]
     assert perf is not None
-    assert perf["score"] == 62
-    assert perf["strategy"] == "mobile"
+    assert perf["mobile"]["score"] == 62
+    assert perf["mobile"]["strategy"] == "mobile"
+    assert perf["desktop"]["strategy"] == "desktop"

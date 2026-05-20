@@ -359,46 +359,74 @@ class ScrapingRequestRead(BaseModel):
         default=None,
         validation_alias=AliasPath("request_metadata", "performance"),
         description=(
-            "Google PageSpeed Insights report for the seed URL. Populated once "
-            "the scrape completes and the PSI call succeeds. Null when "
+            "Google PageSpeed Insights reports for the seed URL, keyed by "
+            "strategy (`mobile` and/or `desktop` — depending on the "
+            "`PAGE_SPEED_INSIGHTS_STRATEGY` setting). Populated once the "
+            "scrape completes and at least one PSI call succeeds. Null when "
             "`PAGE_SPEED_INSIGHTS_API` is unset, while status is "
-            "'pending'/'scraping', or when the call failed (in which case "
-            "`performance_error` is set). Shape: `detector_version` (str), "
-            "`strategy` ('mobile'|'desktop'), `score` (int 0-100 — overall "
-            "Lighthouse performance score), `metrics` (lab metrics in ms; CLS "
-            "is unitless), `field_data` (real-user CrUX data, may be null), "
+            "'pending'/'scraping', or when every configured strategy failed "
+            "(in which case `performance_error` is set). Partial success is "
+            "possible: a strategy that succeeded appears here while a "
+            "strategy that failed appears under `performance_error`. Each "
+            "value has shape: `detector_version` (str), `strategy` "
+            "('mobile'|'desktop'), `score` (int 0-100 — overall Lighthouse "
+            "performance score), `metrics` (lab metrics in ms; CLS is "
+            "unitless), `field_data` (real-user CrUX data, may be null), "
             "`opportunities` (top 5 fixes ranked by potential savings), "
-            "`diagnostics` (top 5 failing audits), `fetched_at` (ISO 8601)."
+            "`diagnostics` (top 5 failing audits), `lighthouse_version`, "
+            "`final_url`, `fetched_at` (ISO 8601)."
         ),
         json_schema_extra={
             "example": {
-                "detector_version": "1",
-                "strategy": "mobile",
-                "score": 62,
-                "metrics": {
-                    "first_contentful_paint_ms": 1820,
-                    "largest_contentful_paint_ms": 3140,
-                    "cumulative_layout_shift": 0.08,
-                    "total_blocking_time_ms": 290,
-                    "speed_index_ms": 4100,
-                    "time_to_interactive_ms": 5200,
-                    "server_response_time_ms": 410,
+                "mobile": {
+                    "detector_version": "1",
+                    "strategy": "mobile",
+                    "score": 62,
+                    "metrics": {
+                        "first_contentful_paint_ms": 1820,
+                        "largest_contentful_paint_ms": 3140,
+                        "cumulative_layout_shift": 0.08,
+                        "total_blocking_time_ms": 290,
+                        "speed_index_ms": 4100,
+                        "time_to_interactive_ms": 5200,
+                        "server_response_time_ms": 410,
+                    },
+                    "field_data": None,
+                    "opportunities": [
+                        {
+                            "id": "unused-javascript",
+                            "title": "Reduce unused JavaScript",
+                            "description": "Reduce unused JavaScript and defer loading of scripts...",
+                            "savings_ms": 1200,
+                            "savings_bytes": 84000,
+                            "display_value": "Potential savings of 84 KiB",
+                        }
+                    ],
+                    "diagnostics": [],
+                    "lighthouse_version": "11.0.0",
+                    "final_url": "https://www.brand.com/",
+                    "fetched_at": "2026-05-19T10:30:00+00:00",
                 },
-                "field_data": None,
-                "opportunities": [
-                    {
-                        "id": "unused-javascript",
-                        "title": "Reduce unused JavaScript",
-                        "description": "Reduce unused JavaScript and defer loading of scripts...",
-                        "savings_ms": 1200,
-                        "savings_bytes": 84000,
-                        "display_value": "Potential savings of 84 KiB",
-                    }
-                ],
-                "diagnostics": [],
-                "lighthouse_version": "11.0.0",
-                "final_url": "https://www.brand.com/",
-                "fetched_at": "2026-05-19T10:30:00+00:00",
+                "desktop": {
+                    "detector_version": "1",
+                    "strategy": "desktop",
+                    "score": 89,
+                    "metrics": {
+                        "first_contentful_paint_ms": 720,
+                        "largest_contentful_paint_ms": 1340,
+                        "cumulative_layout_shift": 0.02,
+                        "total_blocking_time_ms": 60,
+                        "speed_index_ms": 1500,
+                        "time_to_interactive_ms": 1800,
+                        "server_response_time_ms": 180,
+                    },
+                    "field_data": None,
+                    "opportunities": [],
+                    "diagnostics": [],
+                    "lighthouse_version": "11.0.0",
+                    "final_url": "https://www.brand.com/",
+                    "fetched_at": "2026-05-19T10:30:00+00:00",
+                },
             }
         },
     )
@@ -406,16 +434,23 @@ class ScrapingRequestRead(BaseModel):
         default=None,
         validation_alias=AliasPath("request_metadata", "performance_error"),
         description=(
-            "Set instead of `performance` when the PageSpeed Insights call "
-            "raised. Null on success and when no key is configured. Shape: "
-            "`error_code` (exception class name, e.g. `'HTTPStatusError'`), "
-            "`error_message` (str, human-readable), `detector_version` (str)."
+            "PageSpeed Insights failures, keyed by strategy. Only failing "
+            "strategies appear; a strategy that succeeded is under "
+            "`performance` instead. Partial success means e.g. "
+            "`performance.mobile` and `performance_error.desktop` may coexist. "
+            "Null on full success and when no key is configured. Each value "
+            "has shape: `error_code` (exception class name, e.g. "
+            "`'HTTPStatusError'`), `error_message` (str, human-readable, "
+            "scrubbed of the API key, truncated to 1000 chars), "
+            "`detector_version` (str)."
         ),
         json_schema_extra={
             "example": {
-                "error_code": "HTTPStatusError",
-                "error_message": "Client error '429 Too Many Requests' for url ...",
-                "detector_version": "1",
+                "desktop": {
+                    "error_code": "HTTPStatusError",
+                    "error_message": "Client error '429 Too Many Requests' for url ...",
+                    "detector_version": "1",
+                }
             }
         },
     )

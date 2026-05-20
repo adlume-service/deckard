@@ -31,6 +31,7 @@ ReasoningEffort = Literal[
 PageSpeedStrategy = Literal[
     "mobile",
     "desktop",
+    "both",
 ]
 
 
@@ -64,7 +65,7 @@ class Settings(BaseSettings):
 
     page_speed_insights_api: str | None = None
     page_speed_insights_timeout_seconds: float = 30.0
-    page_speed_insights_strategy: PageSpeedStrategy = "mobile"
+    page_speed_insights_strategy: PageSpeedStrategy = "both"
 
     ui_cookie_name: str = "deckard_ui_key"
     ui_cookie_max_age_seconds: int = 7 * 24 * 3600

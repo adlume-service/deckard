@@ -113,53 +113,68 @@
   </article>
 
   {# --- Performance --------------------------------------------------------- #}
+  {% set perf_map = req.performance or {} %}
+  {% set perf_err_map = req.performance_error or {} %}
+  {% set perf_strategies = [] %}
+  {% for s in ["mobile", "desktop"] if s in perf_map or s in perf_err_map %}
+    {% set _ = perf_strategies.append(s) %}
+  {% endfor %}
   <article>
     <header><strong>Performance</strong>
       <small class="text-muted">· PageSpeed Insights</small>
     </header>
-    {% if req.performance_error %}
-      <div class="error-banner">
-        <strong>{{ req.performance_error.error_code }}</strong>
-        <div class="detail">{{ req.performance_error.error_message }}</div>
-      </div>
-    {% elif not req.performance %}
+    {% if not perf_strategies %}
       <p class="text-muted">Not run (no API key, or pending).</p>
     {% else %}
-      {% set p = req.performance %}
-      {% set score = p.get("score", 0) %}
-      {% set score_cls = "perf-score-good" if score >= 90 else ("perf-score-ok" if score >= 50 else "perf-score-bad") %}
-      <div style="display:flex;gap:1rem;align-items:center;margin-bottom:.5rem">
-        <div class="perf-score {{ score_cls }}">{{ score }}</div>
-        <div>
-          <div><strong>{{ p.get("strategy", "—") }}</strong> strategy</div>
-          <div class="text-muted" style="font-size:.85rem">Lighthouse {{ p.get("lighthouse_version", "?") }} · fetched {{ p.get("fetched_at", "—") }}</div>
-        </div>
-      </div>
+      <div style="display:flex;flex-direction:column;gap:1.25rem">
+        {% for strategy in perf_strategies %}
+          <div>
+            {% if strategy in perf_err_map %}
+              {% set err = perf_err_map[strategy] %}
+              <div class="error-banner">
+                <strong>{{ strategy }} · {{ err.error_code }}</strong>
+                <div class="detail">{{ err.error_message }}</div>
+              </div>
+            {% else %}
+              {% set p = perf_map[strategy] %}
+              {% set score = p.get("score", 0) %}
+              {% set score_cls = "perf-score-good" if score >= 90 else ("perf-score-ok" if score >= 50 else "perf-score-bad") %}
+              <div style="display:flex;gap:1rem;align-items:center;margin-bottom:.5rem">
+                <div class="perf-score {{ score_cls }}">{{ score }}</div>
+                <div>
+                  <div><strong>{{ strategy }}</strong> strategy</div>
+                  <div class="text-muted" style="font-size:.85rem">Lighthouse {{ p.get("lighthouse_version", "?") }} · fetched {{ p.get("fetched_at", "—") }}</div>
+                </div>
+              </div>
 
-      {% set m = p.get("metrics") or {} %}
-      <div class="metric-grid">
-        <div><div class="label">LCP</div><div class="value">{{ m.get("largest_contentful_paint_ms", "—") }} ms</div></div>
-        <div><div class="label">FCP</div><div class="value">{{ m.get("first_contentful_paint_ms", "—") }} ms</div></div>
-        <div><div class="label">CLS</div><div class="value">{{ m.get("cumulative_layout_shift", "—") }}</div></div>
-        <div><div class="label">TBT</div><div class="value">{{ m.get("total_blocking_time_ms", "—") }} ms</div></div>
-        <div><div class="label">TTI</div><div class="value">{{ m.get("time_to_interactive_ms", "—") }} ms</div></div>
-        <div><div class="label">TTFB</div><div class="value">{{ m.get("server_response_time_ms", "—") }} ms</div></div>
-      </div>
+              {% set m = p.get("metrics") or {} %}
+              <div class="metric-grid">
+                <div><div class="label">LCP</div><div class="value">{{ m.get("largest_contentful_paint_ms", "—") }} ms</div></div>
+                <div><div class="label">FCP</div><div class="value">{{ m.get("first_contentful_paint_ms", "—") }} ms</div></div>
+                <div><div class="label">CLS</div><div class="value">{{ m.get("cumulative_layout_shift", "—") }}</div></div>
+                <div><div class="label">TBT</div><div class="value">{{ m.get("total_blocking_time_ms", "—") }} ms</div></div>
+                <div><div class="label">TTI</div><div class="value">{{ m.get("time_to_interactive_ms", "—") }} ms</div></div>
+                <div><div class="label">TTFB</div><div class="value">{{ m.get("server_response_time_ms", "—") }} ms</div></div>
+              </div>
 
-      {% if p.get("opportunities") %}
-        <details>
-          <summary><strong>Top opportunities</strong> <span class="text-muted">· {{ p.opportunities | length }}</span></summary>
-          <ul>
-            {% for o in p.opportunities %}
-              <li>
-                <strong>{{ o.title }}</strong>
-                {% if o.get("savings_ms") %}<span class="text-muted"> · {{ o.savings_ms }} ms</span>{% endif %}
-                {% if o.get("display_value") %}<div class="text-muted" style="font-size:.85rem">{{ o.display_value }}</div>{% endif %}
-              </li>
-            {% endfor %}
-          </ul>
-        </details>
-      {% endif %}
+              {% if p.get("opportunities") %}
+                <details>
+                  <summary><strong>Top opportunities</strong> <span class="text-muted">· {{ p.opportunities | length }}</span></summary>
+                  <ul>
+                    {% for o in p.opportunities %}
+                      <li>
+                        <strong>{{ o.title }}</strong>
+                        {% if o.get("savings_ms") %}<span class="text-muted"> · {{ o.savings_ms }} ms</span>{% endif %}
+                        {% if o.get("display_value") %}<div class="text-muted" style="font-size:.85rem">{{ o.display_value }}</div>{% endif %}
+                      </li>
+                    {% endfor %}
+                  </ul>
+                </details>
+              {% endif %}
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
     {% endif %}
   </article>
 

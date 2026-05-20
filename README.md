@@ -182,17 +182,26 @@ model stays free of presentation-layer concerns.
 ### Performance audit (PageSpeed Insights)
 
 Right after the marketing-stack write — still inside the same transaction
-that flips status to `scraped` — Deckard makes a single call to Google's
-PageSpeed Insights v5 API against the seed URL and persists a trimmed
-report to `ScrapingRequest.request_metadata.performance`. As with the
+that flips status to `scraped` — Deckard calls Google's PageSpeed Insights
+v5 API against the seed URL and persists a trimmed report to
+`ScrapingRequest.request_metadata.performance`. As with the
 marketing-stack detector, there is no separate table.
+
+`PAGE_SPEED_INSIGHTS_STRATEGY` controls which form factors are audited:
+`mobile`, `desktop`, or `both` (the default). When set to `both`, mobile
+and desktop are audited concurrently via `asyncio.gather` and each is
+stored under its own key — `performance.mobile` and `performance.desktop`.
+Per-strategy failures are isolated under `performance_error.<strategy>`,
+so partial success (e.g. mobile succeeds, desktop times out) is preserved
+and never flips the request to `failed`. Note that `both` consumes 2×
+PSI quota per scrape.
 
 The free Google quota is 25k requests/day with a free API key, and
 typical PSI latency is 10–30s per call (occasionally 60s+). Authentication
 goes via the `X-goog-api-key` header, **not** the `key` query parameter,
 so the key never appears in URLs that might be echoed back in error
-messages. The persisted `performance_error.error_message` is also
-defensively scrubbed of the key as belt-and-suspenders.
+messages. Each persisted `performance_error.<strategy>.error_message`
+is also defensively scrubbed of the key as belt-and-suspenders.
 
 The raw PSI response is 1–2 MB; we trim it down to ~5–15 KB by keeping
 only what a marketing audit actually consumes:
@@ -213,13 +222,16 @@ The audit is **best-effort and entirely optional**. When
 `PAGE_SPEED_INSIGHTS_API` is unset, the call is skipped silently and
 neither `performance` nor `performance_error` is written — this is a
 configuration choice, not a failure. On any other failure (timeout,
-exhausted retries, malformed response), `performance_error` is written
-with the exception class, scrubbed message, and detector version, and
-the request still completes as `scraped`.
+exhausted retries, malformed response), the failing strategy is recorded
+under `performance_error.<strategy>` with the exception class, scrubbed
+message, and detector version, and the request still completes as
+`scraped`.
 
 Both `performance` and `performance_error` are surfaced as top-level
 fields on the GET response via the same `AliasPath` pattern used for
-marketing-stack.
+marketing-stack. Both are dicts keyed by strategy
+(`mobile`/`desktop`) — only the strategies that ran are present, and
+each strategy appears in exactly one of the two maps.
 
 ### Token-budget fitting
 

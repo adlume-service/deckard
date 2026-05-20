@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 
+from deckard.config import get_settings
 from deckard.services.performance import client as client_module
+
+PSI_FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "performance" / "pagespeed_response.json"
 
 
 async def _make_handler(responses: list[httpx.Response]) -> tuple[Any, list[httpx.Request]]:
@@ -83,3 +88,31 @@ async def test_fetch_does_not_retry_on_401(monkeypatch: pytest.MonkeyPatch) -> N
         )
     assert exc_info.value.response.status_code == 401
     assert len(captured) == 1
+
+
+@pytest.mark.asyncio
+async def test_detect_performance_uses_passed_strategy_not_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``detect_performance`` must take strategy from its kwarg, not settings —
+    the orchestrator decides per-call which strategy to audit.
+    """
+    payload = json.loads(PSI_FIXTURE.read_text(encoding="utf-8"))
+    handler, captured = await _make_handler([httpx.Response(200, json=payload)])
+    transport = httpx.MockTransport(handler)
+
+    real_async_client = httpx.AsyncClient
+
+    def _patched_async_client(*args: Any, **kwargs: Any) -> httpx.AsyncClient:
+        kwargs["transport"] = transport
+        return real_async_client(*args, **kwargs)
+
+    monkeypatch.setattr(client_module.httpx, "AsyncClient", _patched_async_client)
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "page_speed_insights_api", "secret-key")
+    monkeypatch.setattr(settings, "page_speed_insights_strategy", "both")
+
+    report = await client_module.detect_performance("https://example.com/", strategy="desktop")
+
+    assert report["strategy"] == "desktop"
+    assert len(captured) == 1
+    assert "strategy=desktop" in str(captured[0].url)
