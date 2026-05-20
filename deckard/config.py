@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     page_speed_insights_timeout_seconds: float = 30.0
     page_speed_insights_strategy: PageSpeedStrategy = "mobile"
 
+    ui_cookie_name: str = "deckard_ui_key"
+    ui_cookie_max_age_seconds: int = 7 * 24 * 3600
+
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",

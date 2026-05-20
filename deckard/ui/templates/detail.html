@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Request {{ req.id }} · Deckard{% endblock %}
+{% block content %}
+  <p><a href="/ui/">← All requests</a></p>
+  {% include "_detail_body.html" %}
+{% endblock %}

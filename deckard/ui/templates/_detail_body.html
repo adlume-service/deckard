@@ -1,0 +1,292 @@
+{% set is_terminal = req.status in terminal_statuses %}
+<div id="detail-body"
+     {% if not is_terminal %}
+       hx-get="/ui/requests/{{ req.id }}/body"
+       hx-trigger="every 3s"
+       hx-swap="outerHTML"
+     {% endif %}>
+
+  {# --- Header: status + URL + (if any) top-level error ---------------------- #}
+  <article>
+    <header>
+      <hgroup>
+        <h2 style="margin-bottom:.25rem">
+          <span class="status-badge status-{{ req.status }}">{{ req.status }}</span>
+          <span class="text-muted" style="font-size:.75em">{{ req.id }}</span>
+        </h2>
+        <p style="margin:0"><a href="{{ req.requested_url }}" target="_blank" rel="noreferrer">{{ req.requested_url }}</a></p>
+      </hgroup>
+    </header>
+
+    {% if req.error_code %}
+      <div class="error-banner">
+        <strong>{{ req.error_code }}</strong>
+        {% if req.error_message %}<div class="detail">{{ req.error_message }}</div>{% endif %}
+      </div>
+    {% endif %}
+  </article>
+
+  {# --- LLM output --------------------------------------------------------- #}
+  {% set job = req.llm_processing_jobs[0] if req.llm_processing_jobs else None %}
+  {% set output = job.llm_output.output if (job and job.llm_output) else None %}
+  <article>
+    <header>
+      <strong>LLM extraction</strong>
+      {% if job %}<span class="status-badge status-{{ job.status }}">{{ job.status }}</span>{% endif %}
+    </header>
+
+    {% if not job %}
+      <p class="text-muted">No LLM job yet.</p>
+    {% elif job.error_message %}
+      <div class="error-banner">
+        <strong>{{ job.error_code or "error" }}</strong>
+        <div class="detail">{{ job.error_message }}</div>
+      </div>
+    {% elif not output %}
+      <p class="text-muted">Awaiting model response…</p>
+    {% else %}
+      {# Headline fields — the tester's primary answer #}
+      {% for field, label in [
+        ("target_audience", "Target audience"),
+        ("usp", "Unique selling proposition"),
+        ("pricing_and_offer", "Pricing & offer"),
+      ] %}
+        <div class="headline-field">
+          <div class="label">{{ label }}</div>
+          {% if output.get(field) %}
+            <div class="value">{{ output[field] }}</div>
+          {% else %}
+            <div class="value empty">not extracted</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+
+      {% if output.get("conversion_path") %}
+        <div class="headline-field">
+          <div class="label">Conversion path</div>
+          <div class="value">{{ output.conversion_path }}</div>
+        </div>
+      {% endif %}
+
+      {% for field, label in [
+        ("tone_of_voice", "Tone of voice"),
+        ("location", "Location"),
+      ] %}
+        <div class="headline-field">
+          <div class="label">{{ label }}</div>
+          {% if output.get(field) %}
+            <div class="value">{{ output[field] }}</div>
+          {% else %}
+            <div class="value empty">not extracted</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+
+      <div class="headline-field">
+        <div class="label">Event dates</div>
+        {% if output.get("event_dates") %}
+          <div class="value">{{ output.event_dates | join(", ") }}</div>
+        {% else %}
+          <div class="value empty">not extracted</div>
+        {% endif %}
+      </div>
+
+      {# Bottlenecks — open by default; most actionable LLM-produced field #}
+      {% if output.get("bottlenecks") %}
+        <details open style="margin-top:1rem">
+          <summary><strong>Bottlenecks</strong> <span class="text-muted">· {{ output.bottlenecks | length }}</span></summary>
+          <table class="compact">
+            <thead><tr><th>Stage</th><th>Issue</th><th>Evidence</th></tr></thead>
+            <tbody>
+              {% for b in output.bottlenecks %}
+                <tr>
+                  <td>{{ b.get("stage", "—") }}</td>
+                  <td>{{ b.get("issue", "—") }}</td>
+                  <td><em>"{{ b.get("evidence_quote", "") }}"</em></td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </details>
+      {% endif %}
+    {% endif %}
+  </article>
+
+  {# --- Performance --------------------------------------------------------- #}
+  <article>
+    <header><strong>Performance</strong>
+      <small class="text-muted">· PageSpeed Insights</small>
+    </header>
+    {% if req.performance_error %}
+      <div class="error-banner">
+        <strong>{{ req.performance_error.error_code }}</strong>
+        <div class="detail">{{ req.performance_error.error_message }}</div>
+      </div>
+    {% elif not req.performance %}
+      <p class="text-muted">Not run (no API key, or pending).</p>
+    {% else %}
+      {% set p = req.performance %}
+      {% set score = p.get("score", 0) %}
+      {% set score_cls = "perf-score-good" if score >= 90 else ("perf-score-ok" if score >= 50 else "perf-score-bad") %}
+      <div style="display:flex;gap:1rem;align-items:center;margin-bottom:.5rem">
+        <div class="perf-score {{ score_cls }}">{{ score }}</div>
+        <div>
+          <div><strong>{{ p.get("strategy", "—") }}</strong> strategy</div>
+          <div class="text-muted" style="font-size:.85rem">Lighthouse {{ p.get("lighthouse_version", "?") }} · fetched {{ p.get("fetched_at", "—") }}</div>
+        </div>
+      </div>
+
+      {% set m = p.get("metrics") or {} %}
+      <div class="metric-grid">
+        <div><div class="label">LCP</div><div class="value">{{ m.get("largest_contentful_paint_ms", "—") }} ms</div></div>
+        <div><div class="label">FCP</div><div class="value">{{ m.get("first_contentful_paint_ms", "—") }} ms</div></div>
+        <div><div class="label">CLS</div><div class="value">{{ m.get("cumulative_layout_shift", "—") }}</div></div>
+        <div><div class="label">TBT</div><div class="value">{{ m.get("total_blocking_time_ms", "—") }} ms</div></div>
+        <div><div class="label">TTI</div><div class="value">{{ m.get("time_to_interactive_ms", "—") }} ms</div></div>
+        <div><div class="label">TTFB</div><div class="value">{{ m.get("server_response_time_ms", "—") }} ms</div></div>
+      </div>
+
+      {% if p.get("opportunities") %}
+        <details>
+          <summary><strong>Top opportunities</strong> <span class="text-muted">· {{ p.opportunities | length }}</span></summary>
+          <ul>
+            {% for o in p.opportunities %}
+              <li>
+                <strong>{{ o.title }}</strong>
+                {% if o.get("savings_ms") %}<span class="text-muted"> · {{ o.savings_ms }} ms</span>{% endif %}
+                {% if o.get("display_value") %}<div class="text-muted" style="font-size:.85rem">{{ o.display_value }}</div>{% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </details>
+      {% endif %}
+    {% endif %}
+  </article>
+
+  {# --- Marketing stack ----------------------------------------------------- #}
+  {% set detected_vendors = [] %}
+  {% if req.marketing_stack %}
+    {% for key, v in (req.marketing_stack.get("vendors") or {}).items() if v.get("detected") %}
+      {% set _ = detected_vendors.append((key, v)) %}
+    {% endfor %}
+  {% endif %}
+  <article>
+    <header>
+      <strong>Marketing stack</strong>
+      {% if req.marketing_stack %}<span class="text-muted"> · {{ detected_vendors | length }} vendor{{ "" if detected_vendors|length == 1 else "s" }}</span>{% endif %}
+    </header>
+    {% if req.marketing_stack_error %}
+      <div class="error-banner">
+        <strong>{{ req.marketing_stack_error.error_code }}</strong>
+        <div class="detail">{{ req.marketing_stack_error.error_message }}</div>
+      </div>
+    {% elif not req.marketing_stack %}
+      <p class="text-muted">Not yet detected.</p>
+    {% else %}
+      {% set ms = req.marketing_stack %}
+      {% if not detected_vendors %}
+        <p class="text-muted">No vendors detected.</p>
+      {% else %}
+        <ul>
+          {% for key, v in detected_vendors %}
+            <li>
+              <strong>{{ key }}</strong>
+              {% if v.get("ids") %}<span class="text-muted"> · {{ v.ids | join(", ") }}</span>{% endif %}
+              {% if v.get("extras", {}).get("load_context") == "gtm" %}
+                <span class="status-badge badge-muted">via GTM</span>
+              {% endif %}
+              {% if v.get("evidence") %}
+                <details style="margin-top:.25rem">
+                  <summary class="text-muted" style="font-size:.85rem">evidence ({{ v.evidence | length }})</summary>
+                  {% for e in v.evidence %}
+                    <pre class="evidence">{{ e.get("source", "?") }}: {{ e.get("snippet", "") }}</pre>
+                  {% endfor %}
+                </details>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+
+      {% if ms.get("server_side_hints") %}
+        <details>
+          <summary><strong>Server-side hints</strong> <span class="text-muted">· {{ ms.server_side_hints | length }}</span></summary>
+          <ul>
+            {% for h in ms.server_side_hints %}
+              <li>
+                <strong>{{ h.signal }}</strong>
+                <span class="status-badge" style="background:#0891b2">{{ h.confidence }}</span>
+                <div class="text-muted" style="font-size:.85rem">{{ h.evidence }}</div>
+              </li>
+            {% endfor %}
+          </ul>
+        </details>
+      {% endif %}
+
+      <p class="text-muted" style="font-size:.8rem;margin-top:.5rem">
+        detector v{{ ms.get("detector_version", "?") }} · detected at {{ ms.get("detected_at", "—") }}
+      </p>
+    {% endif %}
+  </article>
+
+  {# --- Run metadata (collapsed) ------------------------------------------- #}
+  <details>
+    <summary><strong>Run metadata</strong></summary>
+    <div class="metric-grid">
+      <div><div class="label">Started</div><div class="value">{{ req.started_at.strftime("%Y-%m-%d %H:%M:%S") if req.started_at else "—" }}</div></div>
+      <div><div class="label">Finished</div><div class="value">{{ req.finished_at.strftime("%Y-%m-%d %H:%M:%S") if req.finished_at else "—" }}</div></div>
+      <div>
+        <div class="label">Duration</div>
+        <div class="value">
+          {% if req.finished_at and req.started_at %}
+            {% set duration_s = ((req.finished_at - req.started_at).total_seconds()) | int %}
+            {% if duration_s >= 60 %}{{ duration_s // 60 }}m {{ duration_s % 60 }}s
+            {% else %}{{ duration_s }}s{% endif %}
+          {% elif req.started_at %}in progress
+          {% else %}—{% endif %}
+        </div>
+      </div>
+      <div><div class="label">Attempts</div><div class="value">{{ req.attempt_count }}</div></div>
+      {% if req.idempotency_key %}
+        <div><div class="label">Idempotency key</div><div class="value">{{ req.idempotency_key }}</div></div>
+      {% endif %}
+      {% if job and job.ranker_used is not none %}
+        <div>
+          <div class="label">URL ranker</div>
+          <div class="value">{% if job.ranker_used %}used{% else %}fell back{% endif %}</div>
+        </div>
+      {% endif %}
+    </div>
+  </details>
+
+  {# --- Scraped pages (collapsed — debugging artefact) --------------------- #}
+  <details>
+    <summary><strong>Scraped pages</strong> <span class="text-muted">· {{ req.scraping_results | length }}</span></summary>
+    {% if not req.scraping_results %}
+      <p class="text-muted">No pages captured yet.</p>
+    {% else %}
+      <figure>
+        <table class="compact striped">
+          <thead>
+            <tr><th>URL</th><th>Final URL</th><th>Status</th><th>Tokens</th><th>Captured</th></tr>
+          </thead>
+          <tbody>
+            {% for r in req.scraping_results %}
+              <tr>
+                <td class="url-cell" title="{{ r.url }}">{{ r.url }}</td>
+                <td class="url-cell text-muted" title="{{ r.final_url or '' }}">{{ r.final_url or "—" }}</td>
+                <td>
+                  {% if r.success %}<span style="color:#16a34a">{{ r.status_code or "ok" }}</span>
+                  {% else %}<span style="color:#dc2626">fail</span>{% endif %}
+                </td>
+                <td>{{ r.tokens if r.tokens is not none else "—" }}</td>
+                <td>{{ r.created_at.strftime("%H:%M:%S") }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </figure>
+    {% endif %}
+  </details>
+
+</div>

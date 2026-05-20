@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Log in · Deckard{% endblock %}
+{% block content %}
+  <article style="max-width: 480px; margin: 2rem auto">
+    <hgroup>
+      <h2>Log in</h2>
+      <p>Paste your <code>deckard_live_*</code> API key.</p>
+    </hgroup>
+
+    {% if error == "invalid" %}
+      <p style="color: #dc2626"><strong>Invalid API key.</strong> Check the value and try again.</p>
+    {% endif %}
+
+    <form action="/ui/login" method="post">
+      <label>
+        API key
+        <input type="password" name="api_key" autocomplete="off" autofocus required
+               placeholder="deckard_live_...">
+      </label>
+      <button type="submit">Log in</button>
+    </form>
+  </article>
+{% endblock %}

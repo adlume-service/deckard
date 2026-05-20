@@ -6,6 +6,7 @@ from deckard.config import get_settings
 from deckard.endpoints.scraping_requests import router as scraping_requests_router
 from deckard.endpoints.status import router as status_router
 from deckard.logging import configure_logging
+from deckard.ui.router import router as ui_router
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,7 @@ def create_app() -> FastAPI:
 
     app.include_router(status_router)
     app.include_router(scraping_requests_router)
+    app.include_router(ui_router)
 
     logger.info(
         "Application configured",

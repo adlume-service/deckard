@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Requests · Deckard{% endblock %}
+{% block content %}
+  <article>
+    <h3>Submit a new scrape</h3>
+    {% if submit_error == "invalid" %}
+      <p style="color: #dc2626">URL or client identifier is invalid.</p>
+    {% endif %}
+    <form action="/ui/requests" method="post">
+      <div class="grid">
+        <label>
+          URL
+          <input type="url" name="url" required placeholder="https://example.com">
+        </label>
+        <label>
+          Client identifier
+          <input type="text" name="client_identifier" required placeholder="acme-12345">
+        </label>
+      </div>
+      <label>
+        Idempotency key <small class="text-muted">(optional)</small>
+        <input type="text" name="idempotency_key" placeholder="run-2026-05-20-001">
+      </label>
+      <button type="submit">Submit</button>
+    </form>
+  </article>
+
+  <article>
+    <header>
+      <strong>History</strong>
+      <span class="text-muted"> · {{ total }} request{{ "" if total == 1 else "s" }}</span>
+    </header>
+
+    {% if not items %}
+      <p class="text-muted">No requests yet. Submit one above to get started.</p>
+    {% else %}
+      <figure>
+        <table class="compact striped">
+          <thead>
+            <tr>
+              <th>Requested URL</th>
+              <th>Status</th>
+              <th>Submitted</th>
+              <th>Finished</th>
+              <th>Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+              <tr onclick="window.location='/ui/requests/{{ item.id }}'" style="cursor:pointer">
+                <td class="url-cell" title="{{ item.requested_url }}">
+                  <a href="/ui/requests/{{ item.id }}">{{ item.requested_url }}</a>
+                </td>
+                <td><span class="status-badge status-{{ item.status }}">{{ item.status }}</span></td>
+                <td>{{ item.requested_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+                <td>{{ item.finished_at.strftime("%Y-%m-%d %H:%M:%S") if item.finished_at else "—" }}</td>
+                <td class="truncate">{{ item.error_code or "" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </figure>
+
+      {% set has_prev = offset > 0 %}
+      {% set has_next = (offset + limit) < total %}
+      {% if has_prev or has_next %}
+        <nav>
+          <ul></ul>
+          <ul>
+            {% if has_prev %}
+              <li><a href="/ui/?offset={{ [offset - limit, 0] | max }}">← Prev</a></li>
+            {% endif %}
+            <li class="text-muted">
+              {{ offset + 1 }}–{{ [offset + limit, total] | min }} of {{ total }}
+            </li>
+            {% if has_next %}
+              <li><a href="/ui/?offset={{ offset + limit }}">Next →</a></li>
+            {% endif %}
+          </ul>
+        </nav>
+      {% endif %}
+    {% endif %}
+  </article>
+{% endblock %}

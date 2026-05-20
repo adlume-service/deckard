@@ -66,6 +66,34 @@ class ScrapingRequestCreated(BaseModel):
     requested_at: datetime
 
 
+class ScrapingRequestSummary(BaseModel):
+    """Lightweight projection of a ScrapingRequest for list views.
+
+    Excludes nested results, LLM jobs, and `request_metadata` JSONB. Use
+    `ScrapingRequestRead` (via the GET-by-id endpoint) to fetch the full payload.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    status: ScrapingRequestStatus
+    requested_url: str
+    requested_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    error_code: str | None = None
+    attempt_count: int
+
+
+class ScrapingRequestList(BaseModel):
+    """Paginated list of scraping requests owned by the authenticated ApiUser."""
+
+    items: list[ScrapingRequestSummary]
+    total: int = Field(..., description="Total number of requests owned by this ApiUser.")
+    limit: int
+    offset: int
+
+
 class ScrapingResultRead(BaseModel):
     """A single page scraped as part of a ScrapingRequest. One request can produce many of these."""
 

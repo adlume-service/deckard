@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Deckard{% endblock %}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+  <style>
+    .status-badge {
+      display: inline-block;
+      padding: 0.15rem 0.6rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-transform: lowercase;
+      letter-spacing: 0.02em;
+      color: white;
+      background: var(--pico-muted-color);
+    }
+    .status-pending    { background: #8a8a8a; }
+    .status-scraping   { background: #2563eb; }
+    .status-scraped    { background: #0891b2; }
+    .status-processing { background: #7c3aed; }
+    .status-completed  { background: #16a34a; }
+    .status-failed     { background: #dc2626; }
+    .status-cancelled  { background: #6b7280; }
+
+    .perf-score {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      font-weight: 700;
+      color: white;
+    }
+    .perf-score-good   { background: #16a34a; }
+    .perf-score-ok     { background: #d97706; }
+    .perf-score-bad    { background: #dc2626; }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 0.5rem;
+      margin: 0.5rem 0;
+    }
+    .metric-grid > div {
+      background: var(--pico-card-background-color);
+      border: 1px solid var(--pico-muted-border-color);
+      border-radius: 6px;
+      padding: 0.5rem 0.75rem;
+    }
+    .metric-grid .label { font-size: 0.8rem; color: var(--pico-muted-color); }
+    .metric-grid .value { font-size: 1.05rem; font-weight: 600; }
+
+    table.compact td, table.compact th { padding: 0.4rem 0.6rem; font-size: 0.9rem; }
+    .url-cell { max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .text-muted { color: var(--pico-muted-color); }
+    pre.evidence { white-space: pre-wrap; word-break: break-all; font-size: 0.8rem; }
+    .truncate { max-width: 60ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .error-banner {
+      border-left: 4px solid #dc2626;
+      background: #fef2f2;
+      color: #7f1d1d;
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      margin: 0.5rem 0;
+    }
+    .error-banner strong { display: block; margin-bottom: 0.1rem; }
+    .error-banner .detail { font-size: 0.9rem; opacity: 0.9; }
+
+    .headline-field { margin: 1rem 0; }
+    .headline-field .label {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      color: var(--pico-color);
+      margin-bottom: 0.35rem;
+      padding-bottom: 0.25rem;
+      border-bottom: 1px solid var(--pico-muted-border-color);
+    }
+    .headline-field .value { font-size: 1.05rem; line-height: 1.4; }
+    .headline-field .value.empty { color: var(--pico-muted-color); font-style: italic; }
+
+    .badge-muted {
+      background: var(--pico-muted-color);
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <header class="container">
+    <nav>
+      <ul>
+        <li><strong><a href="/ui/" style="text-decoration:none">Deckard</a></strong></li>
+      </ul>
+      <ul>
+        {% if api_user is defined and api_user %}
+          <li class="text-muted">{{ api_user.name }}</li>
+          <li>
+            <form action="/ui/logout" method="post" style="margin:0">
+              <button type="submit" class="secondary outline" style="padding:.25rem .75rem">Log out</button>
+            </form>
+          </li>
+        {% endif %}
+      </ul>
+    </nav>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

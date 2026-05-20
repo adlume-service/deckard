@@ -1,7 +1,8 @@
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -57,3 +58,31 @@ async def get_with_details(session: AsyncSession, request_id: uuid.UUID) -> Scra
     )
     result = await session.execute(stmt)
     return result.scalar_one_or_none()
+
+
+async def list_for_api_user(
+    session: AsyncSession,
+    *,
+    api_user_id: uuid.UUID,
+    limit: int,
+    offset: int,
+) -> tuple[Sequence[ScrapingRequest], int]:
+    """Return a page of requests owned by an ApiUser (newest first), plus the total count."""
+    where_owned = ScrapingRequest.api_user_id == api_user_id
+
+    total = (await session.execute(select(func.count()).select_from(ScrapingRequest).where(where_owned))).scalar_one()
+
+    items = (
+        (
+            await session.execute(
+                select(ScrapingRequest)
+                .where(where_owned)
+                .order_by(ScrapingRequest.requested_at.desc())
+                .limit(limit)
+                .offset(offset)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return items, total
