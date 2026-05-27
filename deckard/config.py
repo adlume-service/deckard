@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     ui_cookie_name: str = "deckard_ui_key"
     ui_cookie_max_age_seconds: int = 7 * 24 * 3600
 
+    cors_allowed_origins: list[str] = [
+        "http://localhost:5173",
+        "http://localhost:3000",
+    ]
+
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",
