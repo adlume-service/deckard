@@ -61,8 +61,7 @@ async def http_client(
     async def _noop(*args: object, **kwargs: object) -> None:
         return None
 
-    monkeypatch.setattr(scraping_requests_endpoint, "process_scraping_request", _noop)
-    monkeypatch.setattr(scraping_requests_endpoint, "process_llm_job", _noop)
+    monkeypatch.setattr(scraping_requests_endpoint, "run_scraping_request_pipeline", _noop)
 
     app = create_app()
 

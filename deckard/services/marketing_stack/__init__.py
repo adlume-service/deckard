@@ -9,6 +9,7 @@ from deckard.services.marketing_stack.gtm import (
     fetch_gtm_container,
     parse_gtm_container,
 )
+from deckard.services.marketing_stack.stage import run_marketing_stack_stage
 
 __all__ = [
     "MARKETING_STACK_DETECTOR_VERSION",
@@ -16,4 +17,5 @@ __all__ = [
     "enrich_with_gtm_container",
     "fetch_gtm_container",
     "parse_gtm_container",
+    "run_marketing_stack_stage",
 ]

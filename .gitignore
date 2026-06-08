@@ -14,3 +14,6 @@ wheels/
 
 # Tool caches
 .ruff_cache/
+
+# Pycharm
+.idea/

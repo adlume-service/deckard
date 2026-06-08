@@ -1,9 +1,9 @@
 """Orchestration-level tests for PageSpeed Insights detection.
 
-Exercises ``process_scraping_request`` with both ``_crawl`` and the PSI
+Exercises ``run_scraping_request_pipeline`` with both ``crawl`` and the PSI
 ``detect_performance`` call patched, asserting that the trimmed report (or
 ``performance_error``) lands on ``request_metadata`` without affecting
-status.
+status. Extraction is no-op'd by the ``patched_sessionmaker`` fixture.
 """
 
 from __future__ import annotations
@@ -25,9 +25,10 @@ from deckard.config import get_settings
 from deckard.database.models import ScrapingRequest, ScrapingResult
 from deckard.database.operations import client as client_ops
 from deckard.database.operations import website as website_ops
-from deckard.services import scraping as scraping_module
+from deckard.services import scraping_request as pipeline_module
+from deckard.services.performance import stage as performance_stage_module
 from deckard.services.performance.parser import parse_pagespeed_response
-from deckard.services.scraping import process_scraping_request
+from deckard.services.scraping_request import run_scraping_request_pipeline
 from tests.conftest import AuthedApiUser, fresh_client_identifier
 
 PSI_FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "performance" / "pagespeed_response.json"
@@ -51,7 +52,12 @@ async def patched_sessionmaker(db_session: AsyncSession, monkeypatch: pytest.Mon
         expire_on_commit=False,
         join_transaction_mode="create_savepoint",
     )
-    monkeypatch.setattr(scraping_module, "get_sessionmaker", lambda: sessionmaker)
+    monkeypatch.setattr(pipeline_module, "get_sessionmaker", lambda: sessionmaker)
+
+    async def _noop_extraction(*args: object, **kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(pipeline_module, "run_extraction", _noop_extraction)
     yield
 
 
@@ -99,7 +105,7 @@ async def _patch_crawl(monkeypatch: pytest.MonkeyPatch) -> None:
             None,
         )
 
-    monkeypatch.setattr(scraping_module, "_crawl", _fake_crawl)
+    monkeypatch.setattr(pipeline_module, "crawl", _fake_crawl)
 
 
 async def _patch_gtm_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -116,7 +122,7 @@ async def _patch_detect_performance(monkeypatch: pytest.MonkeyPatch) -> None:
         report["fetched_at"] = "2026-05-19T10:30:00+00:00"
         return report
 
-    monkeypatch.setattr(scraping_module, "detect_performance", _fake)
+    monkeypatch.setattr(performance_stage_module, "detect_performance", _fake)
 
 
 async def test_performance_report_persisted(
@@ -131,7 +137,7 @@ async def test_performance_report_persisted(
     await _patch_detect_performance(monkeypatch)
 
     request = await _make_pending_request(db_session, authed_api_user.api_user.id)
-    await process_scraping_request(request.id)
+    await run_scraping_request_pipeline(request.id)
 
     refreshed = (await db_session.execute(select(ScrapingRequest).where(ScrapingRequest.id == request.id))).scalar_one()
     await db_session.refresh(refreshed)
@@ -156,7 +162,7 @@ async def test_both_strategies_succeed(
     await _patch_detect_performance(monkeypatch)
 
     request = await _make_pending_request(db_session, authed_api_user.api_user.id)
-    await process_scraping_request(request.id)
+    await run_scraping_request_pipeline(request.id)
 
     refreshed = (await db_session.execute(select(ScrapingRequest).where(ScrapingRequest.id == request.id))).scalar_one()
     await db_session.refresh(refreshed)
@@ -185,10 +191,10 @@ async def test_partial_failure_mobile_ok_desktop_raises(
         report["fetched_at"] = "2026-05-19T10:30:00+00:00"
         return report
 
-    monkeypatch.setattr(scraping_module, "detect_performance", _fake)
+    monkeypatch.setattr(performance_stage_module, "detect_performance", _fake)
 
     request = await _make_pending_request(db_session, authed_api_user.api_user.id)
-    await process_scraping_request(request.id)
+    await run_scraping_request_pipeline(request.id)
 
     refreshed = (await db_session.execute(select(ScrapingRequest).where(ScrapingRequest.id == request.id))).scalar_one()
     await db_session.refresh(refreshed)
@@ -215,10 +221,10 @@ async def test_both_strategies_fail(
     async def _boom(url: str, *, strategy: str) -> dict[str, Any]:
         raise RuntimeError(f"{strategy} exploded")
 
-    monkeypatch.setattr(scraping_module, "detect_performance", _boom)
+    monkeypatch.setattr(performance_stage_module, "detect_performance", _boom)
 
     request = await _make_pending_request(db_session, authed_api_user.api_user.id)
-    await process_scraping_request(request.id)
+    await run_scraping_request_pipeline(request.id)
 
     refreshed = (await db_session.execute(select(ScrapingRequest).where(ScrapingRequest.id == request.id))).scalar_one()
     await db_session.refresh(refreshed)
@@ -252,10 +258,10 @@ async def test_mobile_only_branching(
         report["fetched_at"] = "2026-05-19T10:30:00+00:00"
         return report
 
-    monkeypatch.setattr(scraping_module, "detect_performance", _fake)
+    monkeypatch.setattr(performance_stage_module, "detect_performance", _fake)
 
     request = await _make_pending_request(db_session, authed_api_user.api_user.id)
-    await process_scraping_request(request.id)
+    await run_scraping_request_pipeline(request.id)
 
     refreshed = (await db_session.execute(select(ScrapingRequest).where(ScrapingRequest.id == request.id))).scalar_one()
     await db_session.refresh(refreshed)
@@ -278,10 +284,10 @@ async def test_psi_failure_isolated_from_request_status(
     async def _boom(url: str, *, strategy: str) -> dict[str, Any]:
         raise RuntimeError("psi exploded")
 
-    monkeypatch.setattr(scraping_module, "detect_performance", _boom)
+    monkeypatch.setattr(performance_stage_module, "detect_performance", _boom)
 
     request = await _make_pending_request(db_session, authed_api_user.api_user.id)
-    await process_scraping_request(request.id)
+    await run_scraping_request_pipeline(request.id)
 
     refreshed = (await db_session.execute(select(ScrapingRequest).where(ScrapingRequest.id == request.id))).scalar_one()
     await db_session.refresh(refreshed)
@@ -311,10 +317,10 @@ async def test_psi_skipped_silently_when_key_unset(
         called = True
         return {}
 
-    monkeypatch.setattr(scraping_module, "detect_performance", _should_not_be_called)
+    monkeypatch.setattr(performance_stage_module, "detect_performance", _should_not_be_called)
 
     request = await _make_pending_request(db_session, authed_api_user.api_user.id)
-    await process_scraping_request(request.id)
+    await run_scraping_request_pipeline(request.id)
 
     refreshed = (await db_session.execute(select(ScrapingRequest).where(ScrapingRequest.id == request.id))).scalar_one()
     await db_session.refresh(refreshed)
@@ -355,10 +361,10 @@ async def test_psi_error_message_redacts_api_key(
             response=response,
         )
 
-    monkeypatch.setattr(scraping_module, "detect_performance", _boom)
+    monkeypatch.setattr(performance_stage_module, "detect_performance", _boom)
 
     request = await _make_pending_request(db_session, authed_api_user.api_user.id)
-    await process_scraping_request(request.id)
+    await run_scraping_request_pipeline(request.id)
 
     refreshed = (await db_session.execute(select(ScrapingRequest).where(ScrapingRequest.id == request.id))).scalar_one()
     await db_session.refresh(refreshed)
@@ -381,7 +387,7 @@ async def test_get_endpoint_exposes_performance(
     await _patch_detect_performance(monkeypatch)
 
     request = await _make_pending_request(db_session, authed_api_user.api_user.id)
-    await process_scraping_request(request.id)
+    await run_scraping_request_pipeline(request.id)
     await db_session.refresh(request)
 
     response = await http_client.get(

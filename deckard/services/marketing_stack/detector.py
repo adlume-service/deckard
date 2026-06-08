@@ -17,6 +17,10 @@ from typing import Any
 from urllib.parse import urlparse
 
 from deckard.services.marketing_stack.catalogue import CATALOGUE, VendorSignature
+from deckard.services.marketing_stack.patterns import (
+    extract_consent_mode_v2_from_html,
+    extract_transport_url,
+)
 
 MARKETING_STACK_DETECTOR_VERSION = "1"
 
@@ -42,8 +46,8 @@ def detect_marketing_stack(
     # GTM-specific extras
     if "gtm" in vendors:
         gtm_extras = vendors["gtm"]["extras"]
-        transport_url = _extract_transport_url(html)
-        consent_mode_v2 = _extract_consent_mode_v2(html)
+        transport_url = extract_transport_url(html)
+        consent_mode_v2 = extract_consent_mode_v2_from_html(html)
         if transport_url:
             gtm_extras["transport_url"] = transport_url
         if consent_mode_v2:
@@ -132,39 +136,6 @@ def _snippet_around(html: str, match: re.Match[str], radius: int = 80) -> str:
     snippet = html[start:end].strip()
     snippet = re.sub(r"\s+", " ", snippet)
     return snippet[:240]
-
-
-# --- GTM-on-page extras (transport_url / consent_mode v2) ---------------
-
-
-def _extract_transport_url(html: str) -> str | None:
-    match = re.search(
-        r"['\"]?transport_url['\"]?\s*[:=]\s*['\"](https?://[^'\"]+)['\"]",
-        html,
-        re.IGNORECASE,
-    )
-    if match is None:
-        return None
-    return match.group(1)
-
-
-def _extract_consent_mode_v2(html: str) -> str | None:
-    # Heuristic: look for gtag('consent', 'default', {...}) and inspect ad_storage.
-    match = re.search(
-        r"gtag\(\s*['\"]consent['\"]\s*,\s*['\"](?:default|update)['\"]\s*,\s*\{([^}]+)\}",
-        html,
-        re.IGNORECASE,
-    )
-    if match is None:
-        return None
-    body = match.group(1)
-    granted = re.search(r"ad_storage['\"]?\s*:\s*['\"]granted['\"]", body, re.IGNORECASE)
-    denied = re.search(r"ad_storage['\"]?\s*:\s*['\"]denied['\"]", body, re.IGNORECASE)
-    if granted:
-        return "granted"
-    if denied:
-        return "denied"
-    return "configured"
 
 
 # --- server-side hints --------------------------------------------------

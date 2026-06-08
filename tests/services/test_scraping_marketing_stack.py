@@ -1,9 +1,9 @@
 """Orchestration-level tests for marketing-stack detection.
 
-Exercises the full ``process_scraping_request`` pipeline with ``_crawl``
-patched to return canned HTML + headers, asserting that the request reaches
-``scraped`` status and the marketing-stack report lands in
-``request_metadata``.
+Exercises ``run_scraping_request_pipeline`` with ``crawl`` patched to return
+canned HTML + headers, asserting that the request reaches ``scraped`` status
+and the marketing-stack report lands in ``request_metadata``. Extraction is
+no-op'd by the ``patched_sessionmaker`` fixture.
 """
 
 from __future__ import annotations
@@ -22,8 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from deckard.database.models import ScrapingRequest, ScrapingResult
 from deckard.database.operations import client as client_ops
 from deckard.database.operations import website as website_ops
-from deckard.services import scraping as scraping_module
-from deckard.services.scraping import process_scraping_request
+from deckard.services import scraping_request as pipeline_module
+from deckard.services.marketing_stack import stage as marketing_stack_stage_module
+from deckard.services.scraping_request import run_scraping_request_pipeline
 from tests.conftest import AuthedApiUser, fresh_client_identifier
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "marketing_stack"
@@ -35,8 +36,10 @@ def _load(name: str) -> str:
 
 @pytest_asyncio.fixture
 async def patched_sessionmaker(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[None]:
-    """Make ``process_scraping_request`` reuse the per-test connection so its commits
-    land on the SAVEPOINT controlled by the outer fixture."""
+    """Make the pipeline reuse the per-test connection so its commits land on the
+    SAVEPOINT controlled by the outer fixture. Extraction is no-op'd — these tests
+    cover scraping + marketing-stack detection only.
+    """
     connection = await db_session.connection()
     sessionmaker = async_sessionmaker(
         bind=connection,
@@ -44,7 +47,12 @@ async def patched_sessionmaker(db_session: AsyncSession, monkeypatch: pytest.Mon
         expire_on_commit=False,
         join_transaction_mode="create_savepoint",
     )
-    monkeypatch.setattr(scraping_module, "get_sessionmaker", lambda: sessionmaker)
+    monkeypatch.setattr(pipeline_module, "get_sessionmaker", lambda: sessionmaker)
+
+    async def _noop_extraction(*args: object, **kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(pipeline_module, "run_extraction", _noop_extraction)
     yield
 
 
@@ -84,7 +92,7 @@ async def _patch_crawl(monkeypatch: pytest.MonkeyPatch, *, html: str, headers: d
             headers,
         )
 
-    monkeypatch.setattr(scraping_module, "_crawl", _fake_crawl)
+    monkeypatch.setattr(pipeline_module, "crawl", _fake_crawl)
 
 
 async def _patch_gtm_fetch(monkeypatch: pytest.MonkeyPatch, body: str | None) -> None:
@@ -105,7 +113,7 @@ async def test_detection_persisted_under_marketing_stack(
 
     request = await _make_pending_request(db_session, authed_api_user.api_user.id)
 
-    await process_scraping_request(request.id)
+    await run_scraping_request_pipeline(request.id)
 
     refreshed = (await db_session.execute(select(ScrapingRequest).where(ScrapingRequest.id == request.id))).scalar_one()
     await db_session.refresh(refreshed)
@@ -126,10 +134,10 @@ async def test_no_seed_html_writes_marketing_stack_error(
     async def _empty_crawl(*, seed_url: str) -> tuple[list[ScrapingResult], dict[str, str] | None]:
         return ([], None)
 
-    monkeypatch.setattr(scraping_module, "_crawl", _empty_crawl)
+    monkeypatch.setattr(pipeline_module, "crawl", _empty_crawl)
 
     request = await _make_pending_request(db_session, authed_api_user.api_user.id)
-    await process_scraping_request(request.id)
+    await run_scraping_request_pipeline(request.id)
 
     refreshed = (await db_session.execute(select(ScrapingRequest).where(ScrapingRequest.id == request.id))).scalar_one()
     await db_session.refresh(refreshed)
@@ -150,10 +158,10 @@ async def test_detector_failure_isolated_from_request_status(
     def _boom(*args: Any, **kwargs: Any) -> dict[str, Any]:
         raise RuntimeError("detector exploded")
 
-    monkeypatch.setattr(scraping_module, "detect_marketing_stack", _boom)
+    monkeypatch.setattr(marketing_stack_stage_module, "detect_marketing_stack", _boom)
 
     request = await _make_pending_request(db_session, authed_api_user.api_user.id)
-    await process_scraping_request(request.id)
+    await run_scraping_request_pipeline(request.id)
 
     refreshed = (await db_session.execute(select(ScrapingRequest).where(ScrapingRequest.id == request.id))).scalar_one()
     await db_session.refresh(refreshed)
@@ -174,8 +182,8 @@ async def test_get_endpoint_exposes_marketing_stack(
     await _patch_gtm_fetch(monkeypatch, _load("gtm_container_body.js"))
 
     request = await _make_pending_request(db_session, authed_api_user.api_user.id)
-    await process_scraping_request(request.id)
-    # process_scraping_request wrote via a different session — refresh our
+    await run_scraping_request_pipeline(request.id)
+    # run_scraping_request_pipeline wrote via a different session — refresh our
     # session's view of the row so the endpoint sees the post-detection state.
     await db_session.refresh(request)
 
@@ -203,10 +211,10 @@ async def test_get_endpoint_exposes_marketing_stack_error(
     async def _empty_crawl(*, seed_url: str) -> tuple[list[ScrapingResult], dict[str, str] | None]:
         return ([], None)
 
-    monkeypatch.setattr(scraping_module, "_crawl", _empty_crawl)
+    monkeypatch.setattr(pipeline_module, "crawl", _empty_crawl)
 
     request = await _make_pending_request(db_session, authed_api_user.api_user.id)
-    await process_scraping_request(request.id)
+    await run_scraping_request_pipeline(request.id)
     await db_session.refresh(request)
 
     response = await http_client.get(
@@ -243,7 +251,7 @@ async def test_existing_metadata_preserved_alongside_marketing_stack(
     await db_session.flush()
     await db_session.commit()
 
-    await process_scraping_request(request.id)
+    await run_scraping_request_pipeline(request.id)
 
     refreshed = (await db_session.execute(select(ScrapingRequest).where(ScrapingRequest.id == request.id))).scalar_one()
     await db_session.refresh(refreshed)

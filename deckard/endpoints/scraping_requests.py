@@ -15,8 +15,7 @@ from deckard.schemas.scraping_request import (
     ScrapingRequestRead,
     ScrapingRequestSummary,
 )
-from deckard.services.extraction import process_llm_job
-from deckard.services.scraping import process_scraping_request
+from deckard.services.scraping_request import run_scraping_request_pipeline
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
@@ -46,8 +45,7 @@ async def create_request_and_schedule(
     await session.commit()
 
     if request.status == "pending":
-        background_tasks.add_task(process_scraping_request, request.id)
-        background_tasks.add_task(process_llm_job, request.id)
+        background_tasks.add_task(run_scraping_request_pipeline, request.id)
 
     return request
 

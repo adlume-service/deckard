@@ -19,6 +19,10 @@ import httpx
 
 from deckard.config import get_settings
 from deckard.services.marketing_stack.catalogue import CATALOGUE_BY_KEY
+from deckard.services.marketing_stack.patterns import (
+    extract_consent_mode_v2_from_container,
+    extract_transport_url,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -98,28 +102,10 @@ def parse_gtm_container(body: str) -> dict[str, Any]:
     for match in re.finditer(r"pintrk\(\s*['\"]load['\"]\s*,\s*['\"](\d+)['\"]", body):
         _add_tag(tags, type_="pinterest_tag", id_=match.group(1))
 
-    transport_url: str | None = None
-    transport_match = re.search(
-        r"['\"]?transport_url['\"]?\s*[:=]\s*['\"](https?://[^'\"]+)['\"]",
-        body,
-        re.IGNORECASE,
-    )
-    if transport_match is not None:
-        transport_url = transport_match.group(1)
-
-    consent_mode_v2: str | None = None
-    consent_match = re.search(
-        r"['\"]ad_storage['\"]\s*:\s*['\"](granted|denied)['\"]",
-        body,
-        re.IGNORECASE,
-    )
-    if consent_match is not None:
-        consent_mode_v2 = consent_match.group(1).lower()
-
     return {
         "tags": tags,
-        "transport_url": transport_url,
-        "consent_mode_v2": consent_mode_v2,
+        "transport_url": extract_transport_url(body),
+        "consent_mode_v2": extract_consent_mode_v2_from_container(body),
     }
 
 
